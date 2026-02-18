@@ -42,7 +42,6 @@
           - apt-transport-https
           - ca-certificates
           - gnupg
-          - software-properties-common
           - lsb-release
         state: present
     
@@ -89,7 +88,6 @@
           - git-extras
           - glab
           - golang
-          - intel-media-va-driver-non-free
           - inotify-tools
           - jq
           - libasan8
@@ -147,85 +145,6 @@
           - gnome-tweaks
           - gnome-shell-extensions
         state: present
-    
-    # =========================================================================
-    # NERD FONTS
-    # =========================================================================
-    - name: Create Nerd Fonts directory
-      become: true
-      file:
-        path: /usr/share/fonts/nerd-fonts
-        state: directory
-        mode: '0755'
-    
-    - name: Check installed Nerd Fonts
-      find:
-        paths: /usr/share/fonts/nerd-fonts
-        patterns: "{{ item }}*"
-        file_type: file
-      register: font_check
-      loop:
-        - 0xProto
-        - ComicShannsMono
-        - FiraCode
-        - JetBrainsMono
-        - UbuntuMono
-        - UbuntuSans
-        - Iosevka
-    
-    - name: Download and install Nerd Fonts
-      become: true
-      block:
-        - name: Download Nerd Font archives
-          get_url:
-            url: "{{ item.url }}"
-            dest: "/tmp/{{ item.name }}.zip"
-            mode: '0644'
-          loop:
-            - { name: '0xProto', url: 'https://github.com/ryanoasis/nerd-fonts/releases/download/v3.4.0/0xProto.zip' }
-            - { name: 'ComicShannsMono', url: 'https://github.com/ryanoasis/nerd-fonts/releases/download/v3.4.0/ComicShannsMono.zip' }
-            - { name: 'FiraCode', url: 'https://github.com/ryanoasis/nerd-fonts/releases/download/v3.2.1/FiraCode.zip' }
-            - { name: 'JetBrainsMono', url: 'https://github.com/ryanoasis/nerd-fonts/releases/download/v3.2.1/JetBrainsMono.zip' }
-            - { name: 'UbuntuMono', url: 'https://github.com/ryanoasis/nerd-fonts/releases/download/v3.2.1/UbuntuMono.zip' }
-            - { name: 'UbuntuSans', url: 'https://github.com/ryanoasis/nerd-fonts/releases/download/v3.2.1/UbuntuSans.zip' }
-            - { name: 'Iosevka', url: 'https://github.com/ryanoasis/nerd-fonts/releases/download/v3.2.1/Iosevka.zip' }
-          when: font_check.results | selectattr('item', 'equalto', item.name) | map(attribute='matched') | first == 0
-        
-        - name: Extract Nerd Fonts
-          unarchive:
-            src: "/tmp/{{ item.name }}.zip"
-            dest: /usr/share/fonts/nerd-fonts
-            remote_src: yes
-            include:
-              - "*.ttf"
-              - "*.otf"
-          loop:
-            - { name: '0xProto' }
-            - { name: 'ComicShannsMono' }
-            - { name: 'FiraCode' }
-            - { name: 'JetBrainsMono' }
-            - { name: 'UbuntuMono' }
-            - { name: 'UbuntuSans' }
-            - { name: 'Iosevka' }
-          when: font_check.results | selectattr('item', 'equalto', item.name) | map(attribute='matched') | first == 0
-        
-        - name: Clean up font archives
-          file:
-            path: "/tmp/{{ item }}.zip"
-            state: absent
-          loop:
-            - 0xProto
-            - ComicShannsMono
-            - FiraCode
-            - JetBrainsMono
-            - UbuntuMono
-            - UbuntuSans
-            - Iosevka
-    
-    - name: Update font cache
-      become: true
-      command: fc-cache -fv
-      changed_when: false
     
     # =========================================================================
     # AM - APPIMAGE MANAGER
@@ -491,9 +410,9 @@
         - flameshot
         - tmux
         - bat
-      args:
-        creates: "{{ user_home }}/.bashrc"
-      ignore_errors: yes
+      register: stow_result
+      changed_when: stow_result.rc == 0
+      failed_when: false
     
   handlers:
     - name: Reload udev rules

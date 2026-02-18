@@ -50,15 +50,15 @@ fi
 # =============================================================================
 # INSTALLAZIONE COLLEZIONI ANSIBLE
 # =============================================================================
-section "Installazione collezioni Ansible"
+# section "Installazione collezioni Ansible"
 
-if [ -f "requirements.yml" ]; then
-    ansible-galaxy collection install -r requirements.yml
-    log "Collezioni Ansible installate"
-else
-    warn "File requirements.yml non trovato, installo community.general manualmente"
-    ansible-galaxy collection install community.general
-fi
+# if [ -f "requirements.yml" ]; then
+#     ansible-galaxy collection install -r requirements.yml
+#     log "Collezioni Ansible installate"
+# else
+#     warn "File requirements.yml non trovato, installo community.general manualmente"
+#     ansible-galaxy collection install community.general
+# fi
 
 # =============================================================================
 # VERIFICA PLAYBOOK
