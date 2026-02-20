@@ -62,6 +62,7 @@
         path: /etc/apt/sources.list
         regexp: '^deb\s+'
         line: '\g<0> contrib non-free non-free-firmware'
+        backrefs: yes
       when: repos_needs_update.stdout == "needs_update"
       
     - name: Update APT cache after enabling additional repos
