@@ -48,13 +48,21 @@
     # =========================================================================
     # TOOL E UTILITIES
     # =========================================================================
+    - name: Check if contrib, non-free repos need to be added
+      become: true
+      shell: |
+        grep -E '^deb\s+.*main\s+' /etc/apt/sources.list | grep -qvE '(contrib non-free non-free-firmware|contrib.*non-free.*non-free-firmware)' && echo "needs_update" || echo "ok"
+      register: repos_needs_update
+      changed_when: false
+      check_mode: false
+
     - name: Enable contrib, non-free and non-free-firmware repositories
       become: true
       lineinfile:
         path: /etc/apt/sources.list
-        regexp: '^deb (.*)$'
-        line: 'deb \1 contrib non-free non-free-firmware'
-        backrefs: yes
+        regexp: '^deb\s+'
+        line: '\g<0> contrib non-free non-free-firmware'
+      when: repos_needs_update.stdout == "needs_update"
       
     - name: Update APT cache after enabling additional repos
       become: true
