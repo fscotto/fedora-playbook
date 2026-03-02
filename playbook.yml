@@ -15,6 +15,13 @@
     dotfiles_repo: "https://github.com/fscotto/dotfiles"
     dotfiles_dir: "{{ user_home }}/.dotfiles"
     java_version: "temurin-17"
+    yubikey_enable_luks2: true
+    yubikey_enable_pam: true
+    yubikey_password_fallback: true
+    yubikey_fido2_device: "auto"
+    yubikey_token_timeout: "10"
+    yubikey_pam_users:
+      - "{{ ansible_user_id }}"
 
     base_packages:
       - btrfs-progs
@@ -164,6 +171,12 @@
     - name: Configure YubiKey support
       import_tasks: tasks/60_yubikey.yml
 
+    - name: Configure YubiKey for LUKS2 unlock
+      import_tasks: tasks/61_yubikey_luks2.yml
+
+    - name: Configure YubiKey for PAM login and sudo
+      import_tasks: tasks/62_yubikey_pam.yml
+
     - name: Configure dotfiles
       import_tasks: tasks/70_dotfiles.yml
 
@@ -184,3 +197,7 @@
     - name: Trigger udev
       become: true
       command: udevadm trigger
+
+    - name: Regenerate initramfs
+      become: true
+      command: dracut -f

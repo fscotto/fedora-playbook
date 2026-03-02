@@ -1,30 +1,39 @@
 # AGENTS.md - Fedora XFCE 43 Ansible Playbook
 
-## Project Overview
-This repository contains a local Ansible playbook that configures a Fedora XFCE 43 workstation.
-It installs developer tooling, security packages (including YubiKey support), desktop apps via Flatpak,
-and user-level setup (Mise, dotfiles, JetBrains Toolbox).
+## Purpose
+This file guides coding agents working in this repository.
+The project is a Fedora-only local Ansible playbook for workstation bootstrap.
+Primary goals are reproducibility, idempotency, and safe reruns.
 
-The playbook is Fedora-only by design.
-
-## Repository Layout
-- `playbook.yml`: main local playbook orchestrating modular task imports
-- `tasks/`: modular task files grouped by domain (preflight, btrfs, hardening, packages, flatpak, tooling, yubikey, dotfiles)
-- `run-ansible.sh`: wrapper that bootstraps Ansible and runs the playbook
-- `requirements.yml`: optional Ansible Galaxy dependencies
-- `README.md`: usage and post-run manual tasks
+## Repository Snapshot
+- `playbook.yml`: entrypoint playbook and shared vars
+- `tasks/00_preflight.yml`: Fedora checks and root filesystem detection
+- `tasks/10_btrfs_layout.yml`: Btrfs subvolume creation/migration/mounts
+- `tasks/11_snapper_grub.yml`: Snapper policy and GRUB integration
+- `tasks/20_hardening.yml`: sysctl/firewalld hardening baseline
+- `tasks/30_packages.yml`: DNF updates and package installation
+- `tasks/40_flatpak.yml`: Flatpak + Flathub app installation
+- `tasks/50_tooling.yml`: Toolbox, Mise, Java, Maven setup
+- `tasks/60_yubikey.yml`: YubiKey packages, services, udev rules
+- `tasks/70_dotfiles.yml`: clone + stow user dotfiles
+- `run-ansible.sh`: bootstrap wrapper around Ansible execution
+- `requirements.yml`: Ansible Galaxy collections input (currently minimal)
 
 ## Build / Lint / Test Commands
 
-### Full execution
+### Full run (preferred)
 ```bash
 chmod +x run-ansible.sh
 ./run-ansible.sh
+```
 
+### Full run (manual)
+```bash
+ansible-galaxy collection install -r requirements.yml
 ansible-playbook -i localhost, -c local playbook.yml --ask-become-pass
 ```
 
-### Syntax and introspection
+### Syntax and structure checks
 ```bash
 ansible-playbook playbook.yml --syntax-check
 ansible-playbook playbook.yml --list-tasks
@@ -39,110 +48,118 @@ yamllint .
 yamllint playbook.yml
 ```
 
-### Shell script checks
+### Shell validation
 ```bash
 bash -n run-ansible.sh
 shellcheck run-ansible.sh
 ```
 
-### Validation strategy
-There are no unit tests. Validate with syntax + lint + check mode + targeted task run.
-
+### Safe validation sequence
+There are no unit tests in this repo.
+Use this sequence when changing playbook logic:
 ```bash
 ansible-playbook -i localhost, -c local playbook.yml --ask-become-pass --check --diff
-
 ansible-playbook -i localhost, -c local playbook.yml --ask-become-pass
 ansible-playbook -i localhost, -c local playbook.yml --ask-become-pass
 ```
 
-### Single-test equivalent (single task)
-Use one of these patterns when you need focused verification.
-
+### Single-test equivalent (focused verification)
+This playbook has no tags yet, so use `--start-at-task` or `--step`.
 ```bash
 ansible-playbook -i localhost, -c local playbook.yml --ask-become-pass \
-  --start-at-task "Install YubiKey packages"
+  --start-at-task "Install YubiKey and smartcard packages"
 
 ansible-playbook -i localhost, -c local playbook.yml --ask-become-pass \
-  --start-at-task "Install YubiKey packages" --check --diff
+  --start-at-task "Configure Snapper and GRUB integration for Btrfs" --check --diff
 
 ansible-playbook -i localhost, -c local playbook.yml --ask-become-pass --step
 ```
 
-Note: the playbook currently does not define `tags`; if focused runs become common,
-prefer adding explicit tags to major task groups.
+Recommended future improvement: add tags for each imported task file.
 
 ## Code Style Guidelines
 
-### YAML formatting
-- Use 2-space indentation; never tabs.
-- Keep lines near or under 120 chars when practical.
-- Do not leave trailing whitespace.
-- Use blank lines between logical task blocks.
+### YAML and formatting
+- Use 2-space indentation; do not use tabs.
+- Keep lines near 120 chars when practical.
+- Remove trailing whitespace.
+- Use blank lines between logical blocks.
 - Prefer double quotes for templated strings and paths.
-- Use `true` / `false` for booleans.
+- Use explicit booleans (`true` / `false`).
 
-### Modules and imports (Ansible equivalent)
+### Module usage and task imports
 - Prefer Ansible modules over `shell`/`command`.
-- Use `dnf` for package management.
-- Use `rpm_key` + `yum_repository` for external repositories.
-- Prefer `file`, `copy`, `lineinfile`, `git`, `systemd`, `stat`, `uri`, `get_url`, `unarchive`.
-- Use `command` only when no higher-level module exists.
-- Use `shell` only for shell-specific behavior (pipes, env activation, multi-line scripts).
+- Use `import_tasks` for static task graph composition (current project style).
+- Prefer these modules where applicable: `dnf`, `file`, `copy`, `lineinfile`, `git`, `mount`, `sysctl`, `systemd`, `stat`, `uri`, `get_url`, `unarchive`.
+- Use `command` only for tools without strong module coverage (`findmnt`, `rsync`, `stow`, etc.).
+- Use `shell` only when shell features are required (pipes, multiline scripts, env activation).
 
-### Types, templates, and variables
-- Store reusable values in play-level `vars`.
-- Use descriptive snake_case names (`user_home`, `flatpak_apps`, `stow_packages`).
-- Reference variables with `{{ ... }}` consistently.
-- Keep list data as YAML lists, not comma-separated strings.
-- Avoid hardcoded literals in task bodies when a variable improves clarity.
+### Variables, data types, templating
+- Keep reusable values in play-level `vars`.
+- Use descriptive `snake_case` variable names.
+- Keep package/app collections as YAML lists, not comma-separated strings.
+- Use `{{ ... }}` templating consistently.
+- Prefer variables over hardcoded literals when values may change.
 
 ### Naming conventions
-- Give every task a clear action-first name.
-- Start task names with verbs: `Install`, `Configure`, `Enable`, `Create`, `Clone`, `Verify`.
-- Include context in the task name for readability.
-- Name handlers by effect (`Reload udev rules`).
+- Task names should be action-first and explicit.
+- Start names with verbs like `Install`, `Configure`, `Enable`, `Create`, `Check`, `Verify`.
+- Include target context in task names (`... for Btrfs`, `... via Flatpak`, etc.).
+- Handler names should describe effect (`Regenerate grub config`, `Reload udev rules`).
 
 ### Idempotency and change reporting
-- Ensure playbook reruns are safe and predictable.
-- Use `creates`, `stat` + `when`, or guard conditions for one-time actions.
+- Every task must be safe to rerun.
+- Guard one-time operations with `creates`, `stat` + `when`, or equivalent checks.
 - Set `changed_when: false` for probe/read-only commands.
-- Use handlers for operations that should happen only after changes.
-- Avoid tasks that always report changed unless explicitly intended.
+- Use `failed_when: false` only when non-zero return is expected and handled.
+- Use handlers for restart/reload actions triggered by real changes.
 
-### Error handling
-- Fail fast on real errors.
-- Use `ignore_errors: true` only for explicitly optional operations.
-- Use `failed_when` when return-code semantics need customization.
-- Use `assert` to enforce preconditions (for example, Fedora-only checks).
+### Error handling and assertions
+- Fail fast on real precondition violations.
+- Use `assert` for environment assumptions (Fedora-only behavior).
+- Use `ignore_errors: true` only for clearly optional tasks.
+- If ignoring errors, keep following logic resilient and explicit.
 
-### Privilege escalation
-- Keep play-level `become: false`.
-- Add `become: true` only on tasks that require root.
-- Use `--ask-become-pass` for manual runs.
+### Privilege escalation and security
+- Keep play-level `become: false` (current project convention).
+- Set `become: true` only on tasks that need elevated privileges.
+- Avoid writing secrets to logs or tracked files.
+- Prefer secure defaults for permissions (`0644` files, `0755` dirs unless stricter is required).
 
 ### Shell script conventions (`run-ansible.sh`)
 - Keep `set -euo pipefail`.
 - Quote variable expansions unless splitting is intentional.
-- Use explicit preflight checks and clear error messages.
-- Keep script behavior idempotent where possible.
-- Avoid destructive commands without explicit user intent.
+- Keep clear preflight checks (non-root, Fedora detection, required files).
+- Print actionable failure messages.
+- Avoid destructive operations without explicit opt-in.
 
-## Fedora XFCE Notes
-- Desktop baseline is Fedora XFCE Spin.
-- GNOME-only customizations are out of scope.
-- RPM Fusion is enabled by the playbook.
-- Java and Maven are managed by Mise, not system defaults.
-- Flatpak (Flathub) manages desktop apps (`com.google.Chrome`, `org.telegram.desktop`, `com.spotify.Client`, `com.getpostman.Postman`, `sh.loft.devpod`).
+## Domain-Specific Expectations
+- Target OS is Fedora XFCE (not GNOME customization-focused).
+- Btrfs behavior is conditional on root filesystem detection.
+- RPM Fusion is part of package bootstrap.
+- Flatpak app management is through Flathub IDs in `flatpak_apps`.
+- Java and Maven are managed via Mise, not system-default packages.
 
-## Editor/Assistant Rule Files
-No repository-specific rule files were found during analysis:
-- `.cursor/rules/` not present
-- `.cursorrules` not present
-- `.github/copilot-instructions.md` not present
+## Agent Workflow Expectations
+- Before edits: read relevant task files and shared vars in `playbook.yml`.
+- After edits: run syntax check first, then lint, then focused check-mode run.
+- For risky filesystem logic (Btrfs migration), prefer `--check --diff` plus targeted start task.
+- Keep changes scoped; avoid unrelated refactors in the same patch.
+- Preserve existing language style when touching user-facing messages.
 
-If these files are added later, agents must treat them as higher-priority guidance.
+## Assistant Rule Files (Cursor/Copilot)
+Checked paths in this repository:
+- `.cursor/rules/` -> not present
+- `.cursorrules` -> not present
+- `.github/copilot-instructions.md` -> not present
+
+If any of these files are added later, treat them as higher-priority guidance than this AGENTS.md.
 
 ## Commit Guidance
 - Use conventional commits (`feat:`, `fix:`, `docs:`, `chore:`, `refactor:`).
-- Keep commit scope focused (playbook logic vs docs vs wrapper script).
-- Before commit, run `git status`, `git diff`, syntax checks, and lint commands.
+- Keep commits focused by concern (playbook logic vs docs vs wrapper script).
+- Before committing, run at least:
+  - `git status`
+  - `git diff`
+  - `ansible-playbook playbook.yml --syntax-check`
+  - `ansible-lint playbook.yml` and/or `yamllint .`

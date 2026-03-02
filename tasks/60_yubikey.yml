@@ -2,6 +2,8 @@
   become: true
   dnf:
     name:
+      - authselect
+      - cryptsetup
       - fido2-tools
       - gnupg2
       - opensc

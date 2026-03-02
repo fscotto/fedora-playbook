@@ -1,0 +1,123 @@
+- name: Configure YubiKey FIDO2 unlock for LUKS2 root volume
+  when: yubikey_enable_luks2 | bool
+  become: true
+  block:
+    - name: Detect root mount source
+      command: findmnt -n -o SOURCE /
+      register: root_mount_source
+      changed_when: false
+
+    - name: Derive root mapper name
+      set_fact:
+        root_mapper_name: "{{ root_mount_source.stdout | regex_replace('^/dev/mapper/', '') }}"
+      when: root_mount_source.stdout is match('^/dev/mapper/.+')
+
+    - name: Resolve backing block device for root mapper
+      command: "lsblk -ndo PKNAME {{ root_mount_source.stdout }}"
+      register: root_backing_pkname
+      changed_when: false
+      failed_when: false
+      when: root_mapper_name is defined
+
+    - name: Set LUKS backing device path
+      set_fact:
+        root_luks_device: "/dev/{{ root_backing_pkname.stdout }}"
+      when:
+        - root_mapper_name is defined
+        - root_backing_pkname.stdout | length > 0
+
+    - name: Warn when LUKS backing device cannot be resolved
+      debug:
+        msg: "Could not resolve backing block device for {{ root_mount_source.stdout }}. Skipping LUKS2 FIDO2 enrollment."
+      when:
+        - root_mapper_name is defined
+        - root_luks_device is not defined
+
+    - name: Verify root device is LUKS2
+      command: "cryptsetup luksDump {{ root_luks_device }}"
+      register: root_luks_dump
+      changed_when: false
+      when: root_luks_device is defined
+
+    - name: Assert root encrypted device uses LUKS2
+      assert:
+        that:
+          - root_luks_dump.stdout is search('Version:\\s+2')
+        fail_msg: "Root encrypted device is not LUKS2. YubiKey FIDO2 enrollment requires LUKS2."
+      when: root_luks_device is defined
+
+    - name: Inspect existing LUKS tokens
+      command: "systemd-cryptenroll --dump {{ root_luks_device }}"
+      register: root_luks_tokens
+      changed_when: false
+      when: root_luks_device is defined
+
+    - name: Enroll YubiKey FIDO2 token for LUKS2
+      command: >-
+        systemd-cryptenroll
+        --fido2-device={{ yubikey_fido2_device }}
+        --fido2-with-user-presence=yes
+        --fido2-with-user-verification=yes
+        {{ root_luks_device }}
+      register: yubikey_luks_enroll
+      when:
+        - root_luks_device is defined
+        - root_luks_tokens.stdout is not search('(?i)fido2')
+      notify: Regenerate initramfs
+
+    - name: Read root mapping entry from /etc/crypttab
+      command: "awk '$1 !~ /^#/ && $1==\"{{ root_mapper_name }}\" {print; exit}' /etc/crypttab"
+      register: root_crypttab_line
+      changed_when: false
+      failed_when: false
+      when: root_mapper_name is defined
+
+    - name: Parse root /etc/crypttab fields
+      set_fact:
+        root_crypttab_fields: "{{ root_crypttab_line.stdout.split() }}"
+      when:
+        - root_crypttab_line is defined
+        - root_crypttab_line.stdout | length > 0
+
+    - name: Build updated /etc/crypttab options for FIDO2
+      set_fact:
+        root_crypttab_source: "{{ root_crypttab_fields[1] }}"
+        root_crypttab_keyfile: "{{ root_crypttab_fields[2] | default('none') }}"
+        root_crypttab_options: "{{ root_crypttab_fields[3] | default('') }}"
+        root_crypttab_new_options: >-
+          {{
+            (root_crypttab_fields[3] | default('') | length > 0)
+            | ternary(
+                root_crypttab_fields[3] + ',fido2-device=' + yubikey_fido2_device,
+                'fido2-device=' + yubikey_fido2_device
+              )
+          }}
+      when:
+        - root_crypttab_fields is defined
+        - root_crypttab_fields | length >= 2
+
+    - name: Add fido2-device option to root /etc/crypttab entry
+      lineinfile:
+        path: /etc/crypttab
+        regexp: "^{{ root_mapper_name }}\\s+"
+        line: "{{ root_mapper_name }} {{ root_crypttab_source }} {{ root_crypttab_keyfile }} {{ root_crypttab_new_options }}"
+      register: yubikey_crypttab_update
+      when:
+        - root_mapper_name is defined
+        - root_crypttab_line is defined
+        - root_crypttab_line.stdout | length > 0
+        - root_crypttab_line.stdout is not search('fido2-device=')
+      notify: Regenerate initramfs
+
+    - name: Warn when root mapper entry is missing in /etc/crypttab
+      debug:
+        msg: "No /etc/crypttab entry found for {{ root_mapper_name }}. FIDO2 unlock may require manual crypttab options."
+      when:
+        - root_mapper_name is defined
+        - root_crypttab_line is defined
+        - root_crypttab_line.stdout | length == 0
+
+    - name: Skip LUKS2 YubiKey setup when root is not mapper-backed
+      debug:
+        msg: "Root source is {{ root_mount_source.stdout }}. Skipping LUKS2 FIDO2 enrollment."
+      when: root_mapper_name is not defined
