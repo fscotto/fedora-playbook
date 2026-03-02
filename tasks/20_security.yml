@@ -1,0 +1,237 @@
+- name: Apply kernel and network hardening sysctl values
+  become: true
+  sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    state: present
+    sysctl_set: true
+    sysctl_file: /etc/sysctl.d/99-workstation-hardening.conf
+    reload: true
+    ignoreerrors: true
+  loop: "{{ sysctl_hardening }}"
+
+- name: Disable core dumps via limits.d
+  become: true
+  copy:
+    dest: /etc/security/limits.d/99-disable-coredumps.conf
+    mode: "0644"
+    content: |
+      * soft core 0
+      * hard core 0
+
+- name: Ensure firewalld is installed
+  become: true
+  dnf:
+    name: firewalld
+    state: present
+
+- name: Enable and start firewalld
+  become: true
+  systemd:
+    name: firewalld
+    enabled: true
+    state: started
+
+- name: Check Secure Boot state
+  become: true
+  command: mokutil --sb-state
+  register: secure_boot_state
+  changed_when: false
+  failed_when: false
+
+- name: Warn when Secure Boot is disabled
+  debug:
+    msg: "Secure Boot appears disabled. For enterprise-dev baseline, enable Secure Boot in firmware."
+  when: secure_boot_state.stdout is not search('enabled')
+
+- name: Configure password quality policy
+  when: security_enable_pam_hardening | bool
+  become: true
+  block:
+    - name: Set minimum password length
+      lineinfile:
+        path: /etc/security/pwquality.conf
+        regexp: '^\s*minlen\s*='
+        line: "minlen = {{ security_pwquality_minlen }}"
+
+    - name: Set minimum password character classes
+      lineinfile:
+        path: /etc/security/pwquality.conf
+        regexp: '^\s*minclass\s*='
+        line: "minclass = {{ security_pwquality_minclass }}"
+
+    - name: Set max password repeated characters
+      lineinfile:
+        path: /etc/security/pwquality.conf
+        regexp: '^\s*maxrepeat\s*='
+        line: "maxrepeat = 3"
+
+- name: Configure faillock policy for local auth
+  when: security_enable_pam_hardening | bool
+  become: true
+  block:
+    - name: Set faillock deny attempts
+      lineinfile:
+        path: /etc/security/faillock.conf
+        regexp: '^\s*deny\s*='
+        line: "deny = {{ security_faillock_deny }}"
+
+    - name: Set faillock failure interval
+      lineinfile:
+        path: /etc/security/faillock.conf
+        regexp: '^\s*fail_interval\s*='
+        line: "fail_interval = {{ security_faillock_fail_interval }}"
+
+    - name: Set faillock unlock time
+      lineinfile:
+        path: /etc/security/faillock.conf
+        regexp: '^\s*unlock_time\s*='
+        line: "unlock_time = {{ security_faillock_unlock_time }}"
+
+- name: Configure shell inactivity timeout
+  when: security_enable_session_timeout | bool
+  become: true
+  copy:
+    dest: /etc/profile.d/99-session-timeout.sh
+    mode: "0644"
+    content: |
+      # Managed by Ansible: workstation session timeout
+      TMOUT={{ security_shell_timeout_seconds }}
+      export TMOUT
+      readonly TMOUT
+
+- name: Configure sudo defaults for workstation security
+  when: security_enable_sudo_hardening | bool
+  become: true
+  copy:
+    dest: /etc/sudoers.d/99-workstation-security
+    mode: "0440"
+    validate: "/usr/sbin/visudo -cf %s"
+    content: |
+      Defaults timestamp_timeout=5
+      Defaults passwd_timeout=1
+      Defaults logfile="/var/log/sudo.log"
+
+- name: Ensure sudo log file exists
+  when: security_enable_sudo_hardening | bool
+  become: true
+  file:
+    path: /var/log/sudo.log
+    state: touch
+    mode: "0600"
+    owner: root
+    group: root
+
+- name: Configure automatic security updates
+  when: security_enable_automatic_updates | bool
+  become: true
+  block:
+    - name: Install dnf-automatic package
+      dnf:
+        name: dnf-automatic
+        state: present
+
+    - name: Enable automatic update download
+      ini_file:
+        path: /etc/dnf/automatic.conf
+        section: commands
+        option: download_updates
+        value: "yes"
+
+    - name: Enable automatic update apply
+      ini_file:
+        path: /etc/dnf/automatic.conf
+        section: commands
+        option: apply_updates
+        value: "yes"
+
+    - name: Disable random sleep before updates
+      ini_file:
+        path: /etc/dnf/automatic.conf
+        section: commands
+        option: random_sleep
+        value: "0"
+
+    - name: Configure automatic update emit via motd
+      ini_file:
+        path: /etc/dnf/automatic.conf
+        section: emitters
+        option: emit_via
+        value: "motd"
+
+    - name: Enable and start automatic update timer
+      systemd:
+        name: dnf-automatic.timer
+        enabled: true
+        state: started
+
+- name: Configure local security audit scans
+  when: security_enable_local_audit_scans | bool
+  become: true
+  block:
+    - name: Install local security audit tools
+      dnf:
+        name:
+          - lynis
+        state: present
+
+    - name: Ensure local security report directory exists
+      file:
+        path: /var/log/security-audit
+        state: directory
+        mode: "0750"
+        owner: root
+        group: root
+
+    - name: Install local security audit runner script
+      copy:
+        dest: /usr/local/sbin/workstation-security-audit.sh
+        mode: "0750"
+        owner: root
+        group: root
+        content: |
+          #!/usr/bin/env bash
+          set -euo pipefail
+          report_dir="/var/log/security-audit"
+          report_file="${report_dir}/lynis-$(date +%F).log"
+          mkdir -p "${report_dir}"
+          lynis audit system --quick --quiet > "${report_file}" 2>&1 || true
+
+    - name: Install systemd unit for weekly local security audit
+      copy:
+        dest: /etc/systemd/system/workstation-security-audit.service
+        mode: "0644"
+        owner: root
+        group: root
+        content: |
+          [Unit]
+          Description=Run weekly local security audit
+
+          [Service]
+          Type=oneshot
+          ExecStart=/usr/local/sbin/workstation-security-audit.sh
+
+    - name: Install systemd timer for weekly local security audit
+      copy:
+        dest: /etc/systemd/system/workstation-security-audit.timer
+        mode: "0644"
+        owner: root
+        group: root
+        content: |
+          [Unit]
+          Description=Weekly local security audit timer
+
+          [Timer]
+          OnCalendar=Sun *-*-* 06:00:00
+          Persistent=true
+          Unit=workstation-security-audit.service
+
+          [Install]
+          WantedBy=timers.target
+      notify: Reload systemd daemon
+
+    - name: Enable and start weekly local security audit timer
+      systemd:
+        name: workstation-security-audit.timer
+        enabled: true
+        state: started

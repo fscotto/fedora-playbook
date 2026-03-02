@@ -15,6 +15,18 @@
     dotfiles_repo: "https://github.com/fscotto/dotfiles"
     dotfiles_dir: "{{ user_home }}/.dotfiles"
     java_version: "temurin-17"
+    security_profile: "enterprise_dev_balanced"
+    security_enable_pam_hardening: true
+    security_enable_sudo_hardening: true
+    security_enable_session_timeout: true
+    security_enable_automatic_updates: true
+    security_enable_local_audit_scans: true
+    security_pwquality_minlen: 14
+    security_pwquality_minclass: 3
+    security_faillock_deny: 5
+    security_faillock_fail_interval: 900
+    security_faillock_unlock_time: 900
+    security_shell_timeout_seconds: 1800
     yubikey_enable_luks2: true
     yubikey_enable_pam: true
     yubikey_password_fallback: true
@@ -147,38 +159,26 @@
       - { key: "net.ipv6.conf.default.accept_redirects", value: "0" }
 
   tasks:
-    - name: Run preflight checks
-      import_tasks: tasks/00_preflight.yml
+    - name: Apply storage baseline
+      import_tasks: tasks/10_storage.yml
 
-    - name: Configure Btrfs layout
-      import_tasks: tasks/10_btrfs_layout.yml
+    - name: Apply workstation security baseline
+      import_tasks: tasks/20_security.yml
 
-    - name: Apply hardening baseline
-      import_tasks: tasks/20_hardening.yml
+    - name: Install system packages
+      import_tasks: tasks/30_system.yml
 
-    - name: Install RPM packages
-      import_tasks: tasks/30_packages.yml
-
-    - name: Configure Snapper and GRUB
-      import_tasks: tasks/11_snapper_grub.yml
-
-    - name: Install Flatpak applications
-      import_tasks: tasks/40_flatpak.yml
+    - name: Install desktop applications
+      import_tasks: tasks/40_apps.yml
 
     - name: Install developer tooling
-      import_tasks: tasks/50_tooling.yml
+      import_tasks: tasks/50_dev_tooling.yml
 
-    - name: Configure YubiKey support
-      import_tasks: tasks/60_yubikey.yml
+    - name: Configure identity and authentication
+      import_tasks: tasks/60_identity.yml
 
-    - name: Configure YubiKey for LUKS2 unlock
-      import_tasks: tasks/61_yubikey_luks2.yml
-
-    - name: Configure YubiKey for PAM login and sudo
-      import_tasks: tasks/62_yubikey_pam.yml
-
-    - name: Configure dotfiles
-      import_tasks: tasks/70_dotfiles.yml
+    - name: Configure user environment
+      import_tasks: tasks/70_user_env.yml
 
   handlers:
     - name: Regenerate grub config
@@ -201,3 +201,8 @@
     - name: Regenerate initramfs
       become: true
       command: dracut -f
+
+    - name: Reload systemd daemon
+      become: true
+      systemd:
+        daemon_reload: true

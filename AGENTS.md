@@ -7,15 +7,13 @@ Primary goals are reproducibility, idempotency, and safe reruns.
 
 ## Repository Snapshot
 - `playbook.yml`: entrypoint playbook and shared vars
-- `tasks/00_preflight.yml`: Fedora checks and root filesystem detection
-- `tasks/10_btrfs_layout.yml`: Btrfs subvolume creation/migration/mounts
-- `tasks/11_snapper_grub.yml`: Snapper policy and GRUB integration
-- `tasks/20_hardening.yml`: sysctl/firewalld hardening baseline
-- `tasks/30_packages.yml`: DNF updates and package installation
-- `tasks/40_flatpak.yml`: Flatpak + Flathub app installation
-- `tasks/50_tooling.yml`: Toolbox, Mise, Java, Maven setup
-- `tasks/60_yubikey.yml`: YubiKey packages, services, udev rules
-- `tasks/70_dotfiles.yml`: clone + stow user dotfiles
+- `tasks/10_storage.yml`: storage orchestration (preflight, Btrfs, Snapper/GRUB)
+- `tasks/20_security.yml`: security orchestration (hardening, auth policy, updates, local audit)
+- `tasks/30_system.yml`: package orchestration
+- `tasks/40_apps.yml`: desktop applications orchestration
+- `tasks/50_dev_tooling.yml`: developer tooling orchestration
+- `tasks/60_identity.yml`: YubiKey/LUKS2/PAM orchestration
+- `tasks/70_user_env.yml`: user environment orchestration
 - `run-ansible.sh`: bootstrap wrapper around Ansible execution
 - `requirements.yml`: Ansible Galaxy collections input (currently minimal)
 

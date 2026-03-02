@@ -1,3 +1,22 @@
+- name: Verify target distribution is Fedora
+  assert:
+    that:
+      - ansible_distribution == "Fedora"
+    fail_msg: "This playbook supports Fedora XFCE only."
+    success_msg: "Fedora detected, continuing setup."
+
+- name: Detect root filesystem type
+  command: findmnt -n -o FSTYPE /
+  register: root_fs_type
+  changed_when: false
+
+- name: Ensure btrfs-progs is installed for Btrfs operations
+  become: true
+  dnf:
+    name: btrfs-progs
+    state: present
+  when: root_fs_type.stdout == "btrfs"
+
 - name: Configure additional Btrfs subvolumes
   when: root_fs_type.stdout == "btrfs"
   become: true
@@ -200,3 +219,129 @@
   debug:
     msg: "Root filesystem is {{ root_fs_type.stdout }}. Skipping Btrfs subvolume setup."
   when: root_fs_type.stdout != "btrfs"
+
+- name: Configure Snapper and GRUB integration for Btrfs
+  when: root_fs_type.stdout == "btrfs"
+  become: true
+  block:
+    - name: Install Snapper
+      dnf:
+        name: snapper
+        state: present
+
+    - name: Install grub-btrfs (optional)
+      dnf:
+        name: grub-btrfs
+        state: present
+      ignore_errors: true
+
+    - name: Check current /.snapshots mount options
+      command: findmnt -n -o OPTIONS /.snapshots
+      register: root_snapshots_mount_opts
+      changed_when: false
+      failed_when: false
+
+    - name: Ensure /.snapshots directory exists
+      file:
+        path: /.snapshots
+        state: directory
+        mode: "0750"
+
+    - name: Create temporary mountpoint for @snapshots migration
+      file:
+        path: /mnt/btrfs-migrate-snapshots
+        state: directory
+        mode: "0755"
+      when: "'subvol=@snapshots' not in root_snapshots_mount_opts.stdout"
+
+    - name: Mount @snapshots subvolume for migration
+      mount:
+        path: /mnt/btrfs-migrate-snapshots
+        src: "{{ root_fs_source.stdout }}"
+        fstype: btrfs
+        opts: subvol=@snapshots
+        state: mounted
+      when: "'subvol=@snapshots' not in root_snapshots_mount_opts.stdout"
+
+    - name: Copy existing /.snapshots data into @snapshots
+      command: rsync -aHAX --numeric-ids /.snapshots/ /mnt/btrfs-migrate-snapshots/
+      when: "'subvol=@snapshots' not in root_snapshots_mount_opts.stdout"
+
+    - name: Empty /.snapshots data from root subvolume
+      command: find /.snapshots -mindepth 1 -xdev -delete
+      changed_when: true
+      when: "'subvol=@snapshots' not in root_snapshots_mount_opts.stdout"
+
+    - name: Unmount @snapshots migration mountpoint
+      mount:
+        path: /mnt/btrfs-migrate-snapshots
+        state: unmounted
+      failed_when: false
+      when: "'subvol=@snapshots' not in root_snapshots_mount_opts.stdout"
+
+    - name: Mount @snapshots on /.snapshots
+      mount:
+        path: /.snapshots
+        src: "{{ root_fs_source.stdout }}"
+        fstype: btrfs
+        opts: subvol=@snapshots,compress=zstd,noatime,nodev,nosuid
+        state: mounted
+
+    - name: Check if Snapper root config exists
+      stat:
+        path: /etc/snapper/configs/root
+      register: snapper_root_config
+
+    - name: Create Snapper root config
+      command: snapper -c root create-config /
+      when: not snapper_root_config.stat.exists
+      notify: Regenerate grub config
+
+    - name: Configure Snapper retention policy
+      lineinfile:
+        path: /etc/snapper/configs/root
+        regexp: '^{{ item.key }}='
+        line: "{{ item.key }}=\"{{ item.value }}\""
+      loop:
+        - { key: "TIMELINE_CREATE", value: "yes" }
+        - { key: "TIMELINE_CLEANUP", value: "yes" }
+        - { key: "NUMBER_CLEANUP", value: "yes" }
+        - { key: "NUMBER_LIMIT", value: "10" }
+        - { key: "NUMBER_LIMIT_IMPORTANT", value: "5" }
+        - { key: "TIMELINE_LIMIT_HOURLY", value: "8" }
+        - { key: "TIMELINE_LIMIT_DAILY", value: "7" }
+        - { key: "TIMELINE_LIMIT_WEEKLY", value: "4" }
+        - { key: "TIMELINE_LIMIT_MONTHLY", value: "3" }
+        - { key: "TIMELINE_LIMIT_YEARLY", value: "0" }
+
+    - name: Enable Snapper timeline timer
+      systemd:
+        name: snapper-timeline.timer
+        enabled: true
+        state: started
+
+    - name: Enable Snapper cleanup timer
+      systemd:
+        name: snapper-cleanup.timer
+        enabled: true
+        state: started
+
+    - name: Check if grub-btrfs systemd path unit exists
+      stat:
+        path: /usr/lib/systemd/system/grub-btrfs.path
+      register: grub_btrfs_path_unit
+
+    - name: Enable grub-btrfs path unit
+      systemd:
+        name: grub-btrfs.path
+        enabled: true
+        state: started
+      when: grub_btrfs_path_unit.stat.exists
+      notify: Regenerate grub config
+
+  always:
+    - name: Ensure @snapshots migration mountpoint is unmounted
+      mount:
+        path: /mnt/btrfs-migrate-snapshots
+        state: unmounted
+      failed_when: false

@@ -1,3 +1,45 @@
+- name: Install YubiKey and smartcard packages
+  become: true
+  dnf:
+    name:
+      - authselect
+      - cryptsetup
+      - fido2-tools
+      - gnupg2
+      - opensc
+      - pam-u2f
+      - pcsc-lite
+      - pcsc-lite-ccid
+      - yubikey-manager
+      - yubikey-personalization
+    state: present
+
+- name: Enable and start pcscd socket
+  become: true
+  systemd:
+    name: pcscd.socket
+    enabled: true
+    state: started
+
+- name: Create YubiKey udev rules
+  become: true
+  copy:
+    dest: /etc/udev/rules.d/70-yubikey.rules
+    mode: "0644"
+    content: |
+      # YubiKey FIDO/U2F access
+      KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1050", MODE="0660", TAG+="uaccess"
+      ACTION=="add|change", SUBSYSTEM=="usb", ATTR{idVendor}=="1050", MODE="0660", TAG+="uaccess"
+  notify:
+    - Reload udev rules
+    - Trigger udev
+
+- name: Create Yubico config directory
+  file:
+    path: "{{ user_home }}/.config/Yubico"
+    state: directory
+    mode: "0755"
+
 - name: Configure YubiKey FIDO2 unlock for LUKS2 root volume
   when: yubikey_enable_luks2 | bool
   become: true
@@ -121,3 +163,103 @@
       debug:
         msg: "Root source is {{ root_mount_source.stdout }}. Skipping LUKS2 FIDO2 enrollment."
       when: root_mapper_name is not defined
+
+- name: Configure PAM U2F for login and sudo with password fallback
+  when: yubikey_enable_pam | bool
+  become: true
+  block:
+    - name: Verify authselect is available
+      command: authselect --version
+      register: authselect_version
+      changed_when: false
+      failed_when: false
+
+    - name: Assert authselect is installed
+      assert:
+        that:
+          - authselect_version.rc == 0
+        fail_msg: "authselect is required to manage PAM configuration safely on Fedora."
+
+    - name: Check authselect integrity
+      command: authselect check
+      register: authselect_check
+      changed_when: false
+      failed_when: false
+
+    - name: Assert current PAM stack is managed by authselect
+      assert:
+        that:
+          - authselect_check.rc == 0
+        fail_msg: "PAM stack is not in a valid authselect state. Repair authselect before enabling YubiKey PAM."
+
+    - name: Get current authselect profile state
+      command: authselect current
+      register: authselect_current
+      changed_when: false
+
+    - name: Enable authselect with-pam-u2f feature
+      command: authselect enable-feature with-pam-u2f
+      register: authselect_u2f_feature
+      when: authselect_current.stdout is not search('with-pam-u2f')
+
+    - name: Apply authselect changes
+      command: authselect apply-changes -b
+      when: authselect_u2f_feature is changed
+
+    - name: Ensure sudo PAM stack includes system-auth
+      lineinfile:
+        path: /etc/pam.d/sudo
+        regexp: '^auth\\s+include\\s+system-auth$'
+        line: 'auth       include      system-auth'
+        state: present
+
+    - name: Resolve home directories for YubiKey PAM users
+      command: "getent passwd {{ item }}"
+      register: yubikey_pam_passwd
+      changed_when: false
+      failed_when: false
+      loop: "{{ yubikey_pam_users }}"
+
+    - name: Assert all YubiKey PAM users exist
+      assert:
+        that:
+          - item.rc == 0
+        fail_msg: "User {{ item.item }} does not exist. Cannot configure U2F mapping."
+      loop: "{{ yubikey_pam_passwd.results }}"
+
+    - name: Ensure Yubico config directory exists for target users
+      file:
+        path: "{{ item.stdout.split(':')[5] }}/.config/Yubico"
+        state: directory
+        mode: "0700"
+        owner: "{{ item.item }}"
+        group: "{{ item.item }}"
+      loop: "{{ yubikey_pam_passwd.results }}"
+
+    - name: Create or update per-user U2F mapping with idempotent fallback
+      become_user: "{{ item.item }}"
+      shell: |
+        set -euo pipefail
+        export HOME="{{ item.stdout.split(':')[5] }}"
+        authfile="$HOME/.config/Yubico/u2f_keys"
+        if [ -f "$authfile" ] && grep -q "^{{ item.item }}:" "$authfile"; then
+          echo "unchanged"
+          exit 0
+        fi
+        new_line="$(pamu2fcfg -u {{ item.item }})"
+        if [ -f "$authfile" ]; then
+          printf '%s\n' "$new_line" >> "$authfile"
+        else
+          printf '%s\n' "$new_line" > "$authfile"
+        fi
+        chmod 600 "$authfile"
+        echo "changed"
+      register: pam_u2f_user_map
+      changed_when: "'changed' in pam_u2f_user_map.stdout"
+      loop: "{{ yubikey_pam_passwd.results }}"
+
+    - name: Verify password fallback remains enabled in auth stack
+      assert:
+        that:
+          - yubikey_password_fallback | bool
+        fail_msg: "Password fallback must remain enabled for login and sudo safety."
