@@ -1,3 +1,52 @@
+- name: Install Liberation fonts
+  become: true
+  dnf:
+    name:
+      - liberation-mono-fonts
+      - liberation-sans-fonts
+      - liberation-serif-fonts
+    state: present
+
+- name: Ensure user font directories exist
+  file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ user_home }}/.local/share/fonts"
+    - "{{ user_home }}/.local/share/fonts/.ansible-markers"
+    - "/tmp/nerd-fonts"
+
+- name: Download Nerd Fonts archives
+  get_url:
+    url: "https://github.com/ryanoasis/nerd-fonts/releases/latest/download/{{ item }}.zip"
+    dest: "/tmp/nerd-fonts/{{ item }}.zip"
+    mode: "0644"
+    force: false
+  loop: "{{ nerd_fonts }}"
+
+- name: Install Nerd Fonts
+  unarchive:
+    src: "/tmp/nerd-fonts/{{ item }}.zip"
+    dest: "{{ user_home }}/.local/share/fonts"
+    remote_src: true
+    creates: "{{ user_home }}/.local/share/fonts/.ansible-markers/{{ item }}.installed"
+  loop: "{{ nerd_fonts }}"
+  register: nerd_fonts_install
+
+- name: Mark Nerd Fonts as installed
+  file:
+    path: "{{ user_home }}/.local/share/fonts/.ansible-markers/{{ item.item }}.installed"
+    state: touch
+    mode: "0644"
+  loop: "{{ nerd_fonts_install.results }}"
+  when: item.changed
+
+- name: Refresh font cache
+  command: fc-cache -f "{{ user_home }}/.local/share/fonts"
+  changed_when: false
+  when: nerd_fonts_install is changed
+
 - name: Build bat cache
   command: bat cache --build
   changed_when: false

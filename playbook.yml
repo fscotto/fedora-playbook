@@ -134,6 +134,15 @@
       - tmux
       - bat
 
+    nerd_fonts:
+      - "0xProto"
+      - "ComicShannsMono"
+      - "FiraCode"
+      - "JetBrainsMono"
+      - "UbuntuMono"
+      - "UbuntuSans"
+      - "Iosevka"
+
     btrfs_extra_subvolumes:
       - "@log"
       - "@cache"

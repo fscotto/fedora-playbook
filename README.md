@@ -43,9 +43,10 @@ Il playbook può essere eseguito più volte senza problemi. Ansible salta i task
 Dopo il riavvio:
 
 1. Lanciare `jetbrains-toolbox` per installare IntelliJ IDEA Ultimate
-2. Configurare YubiKey PAM (vedi istruzioni nello script bash)
-3. Verificare: `java -version && mvn -version`
-4. Aggiornare Flatpak quando necessario: `flatpak update`
+2. Verificare login/sudo con YubiKey (fallback password attivo)
+3. Verificare unlock LUKS2 con YubiKey al boot (quando abilitato)
+4. Verificare: `java -version && mvn -version`
+5. Aggiornare Flatpak quando necessario: `flatpak update`
 
 ## Btrfs + Snapper + GRUB
 
@@ -97,8 +98,9 @@ Comandi utili Flatpak:
 
 ## Note
 
-- I task Mise e Stow usano `shell` perché non esistono moduli Ansible nativi
+- I task Mise usano `shell` perché non esistono moduli Ansible nativi equivalenti
+- I task Stow usano `command`
 - Flatpak (Flathub) gestisce Google Chrome, Telegram, Spotify, Postman, DevPod
-- Nerd Fonts installati: 0xProto, ComicShannsMono, FiraCode, JetBrainsMono, UbuntuMono, UbuntuSans, Iosevka
+- Font installati: Liberation (Mono/Sans/Serif) + Nerd Fonts 0xProto, ComicShannsMono, FiraCode, JetBrainsMono, UbuntuMono, UbuntuSans, Iosevka
 - Il playbook assume esecuzione locale (`localhost`)
 - Il playbook e il wrapper sono Fedora-only (target: Fedora XFCE Spin)
