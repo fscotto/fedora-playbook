@@ -1,0 +1,95 @@
+- name: Create JetBrains Toolbox directory
+  file:
+    path: "{{ user_home }}/.local/bin"
+    state: directory
+    mode: "0755"
+
+- name: Check if JetBrains Toolbox is installed
+  stat:
+    path: "{{ user_home }}/.local/bin/jetbrains-toolbox"
+  register: toolbox_bin
+
+- name: Get latest JetBrains Toolbox URL
+  uri:
+    url: https://data.services.jetbrains.com/products/releases?code=TBA&latest=true&type=release
+    return_content: true
+  register: toolbox_api
+  when: not toolbox_bin.stat.exists
+
+- name: Extract Toolbox download URL
+  set_fact:
+    toolbox_url: "{{ toolbox_api.json.TBA[0].downloads.linux.link }}"
+  when: not toolbox_bin.stat.exists
+
+- name: Download JetBrains Toolbox archive
+  get_url:
+    url: "{{ toolbox_url }}"
+    dest: /tmp/jetbrains-toolbox.tar.gz
+    mode: "0644"
+  when: not toolbox_bin.stat.exists
+
+- name: Extract JetBrains Toolbox archive
+  unarchive:
+    src: /tmp/jetbrains-toolbox.tar.gz
+    dest: /tmp
+    remote_src: true
+  when: not toolbox_bin.stat.exists
+
+- name: Find extracted Toolbox binary
+  find:
+    paths: /tmp
+    patterns: "jetbrains-toolbox"
+    recurse: true
+    file_type: file
+  register: toolbox_binary
+  when: not toolbox_bin.stat.exists
+
+- name: Install Toolbox in local binary directory
+  copy:
+    src: "{{ toolbox_binary.files[0].path }}"
+    dest: "{{ user_home }}/.local/bin/jetbrains-toolbox"
+    mode: "0755"
+    remote_src: true
+  when: not toolbox_bin.stat.exists and toolbox_binary.matched > 0
+
+- name: Add local bin directory to PATH in .bashrc
+  lineinfile:
+    path: "{{ user_home }}/.bashrc"
+    line: 'export PATH="$HOME/.local/bin:$PATH"'
+    create: true
+    state: present
+
+- name: Check if Mise is installed
+  command: mise --version
+  register: mise_check
+  ignore_errors: true
+  changed_when: false
+
+- name: Install Mise
+  shell: curl https://mise.run | sh
+  args:
+    creates: "{{ user_home }}/.local/bin/mise"
+  when: mise_check.rc != 0
+
+- name: Add Mise activation to .bashrc
+  lineinfile:
+    path: "{{ user_home }}/.bashrc"
+    line: 'eval "$(mise activate bash)"'
+    create: true
+    state: present
+
+- name: Install Java via Mise
+  shell: |
+    export PATH="{{ user_home }}/.local/bin:$PATH"
+    mise install java@{{ java_version }}
+    mise use --global java@{{ java_version }}
+  args:
+    creates: "{{ user_home }}/.local/share/mise/installs/java"
+
+- name: Install Maven via Mise
+  shell: |
+    export PATH="{{ user_home }}/.local/bin:$PATH"
+    mise install maven@latest
+    mise use --global maven@latest
+  args:
+    creates: "{{ user_home }}/.local/share/mise/installs/maven"

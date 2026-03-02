@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # =============================================================================
-# Ansible Bootstrap Wrapper - Debian 13 Trixie Workstation
+# Ansible Bootstrap Wrapper - Fedora XFCE 43 Workstation
 # =============================================================================
 # Questo script installa Ansible e le sue dipendenze, poi esegue il playbook
 # Uso: chmod +x run-ansible.sh && ./run-ansible.sh
@@ -25,9 +25,9 @@ if [ "$EUID" -eq 0 ]; then
     error "Non eseguire questo script come root. Usa il tuo utente normale."
 fi
 
-# Verifica di essere su Debian
-if [ ! -f /etc/debian_version ]; then
-    error "Questo script è progettato per Debian. Sistema operativo non supportato."
+# Verifica di essere su Fedora
+if [ ! -f /etc/fedora-release ]; then
+    error "Questo script è progettato per Fedora XFCE. Sistema operativo non supportato."
 fi
 
 # =============================================================================
@@ -37,10 +37,9 @@ section "Verifica e installazione Ansible"
 
 if ! command -v ansible-playbook &> /dev/null; then
     log "Ansible non trovato, procedo con l'installazione..."
-    
-    sudo apt update
-    sudo apt install -y ansible
-    
+
+    sudo dnf install -y ansible
+
     log "Ansible installato con successo"
 else
     ANSIBLE_VERSION=$(ansible --version | head -n1)
@@ -48,17 +47,16 @@ else
 fi
 
 # =============================================================================
-# INSTALLAZIONE COLLEZIONI ANSIBLE
+# INSTALLAZIONE COLLEZIONI ANSIBLE (opzionale)
 # =============================================================================
-# section "Installazione collezioni Ansible"
+section "Installazione collezioni Ansible"
 
-# if [ -f "requirements.yml" ]; then
-#     ansible-galaxy collection install -r requirements.yml
-#     log "Collezioni Ansible installate"
-# else
-#     warn "File requirements.yml non trovato, installo community.general manualmente"
-#     ansible-galaxy collection install community.general
-# fi
+if [ -f "requirements.yml" ]; then
+    ansible-galaxy collection install -r requirements.yml
+    log "Collezioni Ansible installate"
+else
+    warn "File requirements.yml non trovato, continuo senza collezioni aggiuntive"
+fi
 
 # =============================================================================
 # VERIFICA PLAYBOOK
@@ -92,9 +90,8 @@ echo -e "${GREEN}✔ Playbook Ansible eseguito con successo${NC}"
 echo ""
 echo -e "${YELLOW}Azioni manuali richieste dopo il riavvio:${NC}"
 echo -e "${YELLOW}  1. Lanciare 'jetbrains-toolbox' per installare IntelliJ IDEA Ultimate${NC}"
-echo -e "${YELLOW}  2. Abilitare PaperWM: gnome-extensions enable paperwm@paperwm.github.com${NC}"
-echo -e "${YELLOW}  3. Configurare YubiKey PAM (inserisci YubiKey e lancia pamu2fcfg)${NC}"
-echo -e "${YELLOW}  4. Verificare: java -version && mvn -version${NC}"
-echo -e "${YELLOW}  5. Aggiornare AppImage: am -u (o am -U per aggiornare tutto)${NC}"
+echo -e "${YELLOW}  2. Configurare YubiKey PAM (inserisci YubiKey e lancia pamu2fcfg)${NC}"
+echo -e "${YELLOW}  3. Verificare: java -version && mvn -version${NC}"
+echo -e "${YELLOW}  4. Aggiornare Flatpak: flatpak update${NC}"
 echo ""
 warn "Riavvia il sistema per applicare tutte le modifiche."

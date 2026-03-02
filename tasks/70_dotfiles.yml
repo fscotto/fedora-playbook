@@ -1,0 +1,18 @@
+- name: Build bat cache
+  command: bat cache --build
+  changed_when: false
+  ignore_errors: true
+
+- name: Clone dotfiles repository
+  git:
+    repo: "{{ dotfiles_repo }}"
+    dest: "{{ dotfiles_dir }}"
+    update: true
+
+- name: Stow dotfiles packages
+  command: "stow --restow {{ item }}"
+  args:
+    chdir: "{{ dotfiles_dir }}"
+  loop: "{{ stow_packages }}"
+  changed_when: false
+  failed_when: false

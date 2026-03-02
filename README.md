@@ -1,4 +1,4 @@
-# Debian 13 Trixie Workstation - Ansible Setup
+# Fedora XFCE 43 Workstation - Ansible Setup
 
 ## Uso rapido (consigliato)
 
@@ -21,8 +21,7 @@ Se preferisci controllare ogni passaggio:
 
 ```bash
 # 1. Installa Ansible
-sudo apt update
-sudo apt install ansible
+sudo dnf install ansible
 
 # 2. Installa le collezioni necessarie
 ansible-galaxy collection install -r requirements.yml
@@ -33,6 +32,8 @@ ansible-playbook -i localhost, -c local playbook.yml --ask-become-pass
 
 Il flag `--ask-become-pass` chiederà la password sudo all'inizio.
 
+Nota: il playbook e` modulare e importa task da `tasks/*.yml` per area funzionale.
+
 ## Idempotenza
 
 Il playbook può essere eseguito più volte senza problemi. Ansible salta i task già completati.
@@ -42,25 +43,42 @@ Il playbook può essere eseguito più volte senza problemi. Ansible salta i task
 Dopo il riavvio:
 
 1. Lanciare `jetbrains-toolbox` per installare IntelliJ IDEA Ultimate
-2. Abilitare PaperWM: `gnome-extensions enable paperwm@paperwm.github.com`
-3. Configurare YubiKey PAM (vedi istruzioni nello script bash)
-4. Verificare: `java -version && mvn -version`
-5. Aggiornare AppImage quando necessario: `am -u` (singola app) o `am -U` (tutte)
+2. Configurare YubiKey PAM (vedi istruzioni nello script bash)
+3. Verificare: `java -version && mvn -version`
+4. Aggiornare Flatpak quando necessario: `flatpak update`
 
-## Gestione AppImage con AM
+## Btrfs + Snapper + GRUB
 
-Il playbook installa **AM (AppImage Manager)** per gestire:
+Se il filesystem root e` Btrfs, il playbook:
+- crea i subvolume aggiuntivi (`@log`, `@cache`, `@snapshots`, `@libvirt`)
+- monta `@cache` su `/var/cache` e `@log` su `/var/log`
+- monta `@libvirt` su `/var/lib/libvirt`
+- monta `@snapshots` su `/.snapshots`
+- configura Snapper (`root`) con policy timeline/cleanup
+- abilita i timer `snapper-timeline.timer` e `snapper-cleanup.timer`
+- tenta integrazione GRUB snapshot menu con `grub-btrfs` quando disponibile
+
+Comandi utili:
+- `sudo snapper -c root list`
+- `sudo snapper -c root create --description "manual pre-change"`
+- `systemctl status snapper-timeline.timer snapper-cleanup.timer`
+- `systemctl status grub-btrfs.path`
+
+## Gestione applicazioni con Flatpak
+
+Il playbook installa e configura **Flatpak** (Flathub) per gestire:
+- Google Chrome
 - Telegram
 - Spotify
 - Postman
 - DevPod
 
-Comandi utili AM:
-- `am -l` - lista app installate
-- `am -u <app>` - aggiorna singola app
-- `am -U` - aggiorna tutte le app
-- `am -r <app>` - rimuove app
-- `am -q <termine>` - cerca app disponibili
+Comandi utili Flatpak:
+- `flatpak list` - lista app installate
+- `flatpak update` - aggiorna tutte le app Flatpak
+- `flatpak update <app-id>` - aggiorna singola app
+- `flatpak uninstall <app-id>` - rimuove app
+- `flatpak search <termine>` - cerca app disponibili
 
 ## Confronto con lo script Bash
 
@@ -80,6 +98,7 @@ Comandi utili AM:
 ## Note
 
 - I task Mise e Stow usano `shell` perché non esistono moduli Ansible nativi
-- AM (AppImage Manager) gestisce Telegram, Spotify, Postman, DevPod
+- Flatpak (Flathub) gestisce Google Chrome, Telegram, Spotify, Postman, DevPod
 - Nerd Fonts installati: 0xProto, ComicShannsMono, FiraCode, JetBrainsMono, UbuntuMono, UbuntuSans, Iosevka
 - Il playbook assume esecuzione locale (`localhost`)
+- Il playbook e il wrapper sono Fedora-only (target: Fedora XFCE Spin)

@@ -1,0 +1,17 @@
+- name: Install Flatpak
+  become: true
+  dnf:
+    name: flatpak
+    state: present
+
+- name: Enable Flathub remote
+  become: true
+  command: flatpak remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+  changed_when: false
+
+- name: Install desktop applications via Flatpak
+  become: true
+  command: "flatpak install -y flathub {{ item }}"
+  loop: "{{ flatpak_apps }}"
+  args:
+    creates: "/var/lib/flatpak/app/{{ item }}"

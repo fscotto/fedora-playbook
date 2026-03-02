@@ -1,0 +1,34 @@
+- name: Update DNF cache and upgrade installed packages
+  become: true
+  dnf:
+    name: "*"
+    state: latest
+    update_cache: true
+
+- name: Install base dependencies
+  become: true
+  dnf:
+    name: "{{ base_packages }}"
+    state: present
+
+- name: Enable RPM Fusion repositories
+  become: true
+  dnf:
+    name:
+      - "https://mirrors.rpmfusion.org/free/fedora/rpmfusion-free-release-{{ ansible_distribution_major_version }}.noarch.rpm"
+      - "https://mirrors.rpmfusion.org/nonfree/fedora/rpmfusion-nonfree-release-{{ ansible_distribution_major_version }}.noarch.rpm"
+    state: present
+    disable_gpg_check: false
+
+- name: Install CLI tools and utilities
+  become: true
+  dnf:
+    name: "{{ cli_packages }}"
+    state: present
+
+- name: Install optional CLI tools and utilities
+  become: true
+  dnf:
+    name: "{{ optional_cli_packages }}"
+    state: present
+  ignore_errors: true

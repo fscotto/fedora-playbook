@@ -1,0 +1,33 @@
+- name: Apply kernel and network hardening sysctl values
+  become: true
+  sysctl:
+    name: "{{ item.key }}"
+    value: "{{ item.value }}"
+    state: present
+    sysctl_set: true
+    sysctl_file: /etc/sysctl.d/99-workstation-hardening.conf
+    reload: true
+    ignoreerrors: true
+  loop: "{{ sysctl_hardening }}"
+
+- name: Disable core dumps via limits.d
+  become: true
+  copy:
+    dest: /etc/security/limits.d/99-disable-coredumps.conf
+    mode: "0644"
+    content: |
+      * soft core 0
+      * hard core 0
+
+- name: Ensure firewalld is installed
+  become: true
+  dnf:
+    name: firewalld
+    state: present
+
+- name: Enable and start firewalld
+  become: true
+  systemd:
+    name: firewalld
+    enabled: true
+    state: started

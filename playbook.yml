@@ -1,429 +1,186 @@
 ---
 # =============================================================================
-# Ansible Playbook - Debian 13 Trixie Workstation
+# Ansible Playbook - Fedora XFCE 43 Workstation
 # =============================================================================
-# Uso: ansible-playbook -i localhost, -c local playbook.yml --ask-become-pass
+# Usage: ansible-playbook -i localhost, -c local playbook.yml --ask-become-pass
 # =============================================================================
 
-- name: Setup Debian 13 Trixie Workstation
+- name: Setup Fedora XFCE 43 Workstation
   hosts: localhost
   connection: local
   become: false
-  
+
   vars:
     user_home: "{{ ansible_env.HOME }}"
     dotfiles_repo: "https://github.com/fscotto/dotfiles"
     dotfiles_dir: "{{ user_home }}/.dotfiles"
     java_version: "temurin-17"
-    
-  tasks:
-    # =========================================================================
-    # SISTEMA BASE
-    # =========================================================================
-    - name: Update APT cache
-      become: true
-      apt:
-        update_cache: yes
-        cache_valid_time: 3600
-      
-    - name: Upgrade all packages
-      become: true
-      apt:
-        upgrade: dist
-        
-    - name: Install base dependencies
-      become: true
-      apt:
-        name:
-          - curl
-          - wget
-          - git
-          - build-essential
-          - apt-transport-https
-          - ca-certificates
-          - gnupg
-          - lsb-release
-        state: present
-    
-    # =========================================================================
-    # TOOL E UTILITIES
-    # =========================================================================
-    - name: Check if contrib, non-free repos need to be added
-      become: true
-      shell: |
-        grep -E '^deb\s+.*main\s+' /etc/apt/sources.list | grep -qvE '(contrib non-free non-free-firmware|contrib.*non-free.*non-free-firmware)' && echo "needs_update" || echo "ok"
-      register: repos_needs_update
-      changed_when: false
-      check_mode: false
 
-    - name: Enable contrib, non-free and non-free-firmware repositories
-      become: true
-      lineinfile:
-        path: /etc/apt/sources.list
-        regexp: '^deb\s+'
-        line: '\g<0> contrib non-free non-free-firmware'
-        backrefs: yes
-      when: repos_needs_update.stdout == "needs_update"
-      
-    - name: Update APT cache after enabling additional repos
-      become: true
-      apt:
-        update_cache: yes
-    
-    - name: Install CLI tools and utilities
-      become: true
-      apt:
-        name:
-          - bat
-          - build-essential
-          - clang
-          - clang-format
-          - clang-tools
-          - curl
-          - entr
-          - fastfetch
-          - fd-find
-          - ffmpeg
-          - ffmpegthumbnailer
-          - flameshot
-          - fonts-noto
-          - fzf
-          - gdb
-          - gh
-          - git
-          - git-crypt
-          - git-delta
-          - git-email
-          - git-extras
-          - glab
-          - golang
-          - inotify-tools
-          - jq
-          - libasan8
-          - libdbus-1-dev
-          - libgl1-mesa-dri
-          - libreoffice
-          - ltrace
-          - luarocks
-          - net-tools
-          - network-manager-openconnect
-          - neovim
-          - ninja-build
-          - nodejs
-          - npm
-          - openssh-client
-          - papirus-icon-theme
-          - pinentry-gtk2
-          - pinentry-tty
-          - pipx
-          - pkg-config
-          - pkgconf
-          - playerctl
-          - plocate
-          - podman
-          - poppler-utils
-          - pylint
-          - python3-flake8
-          - python3-ipython
-          - python3-isort
-          - python3-mypy
-          - python3-pip
-          - python3-pytest
-          - python3-virtualenv
-          - qemu-system-x86
-          - qt5ct
-          - qt6ct
-          - rclone
-          - ripgrep
-          - rsync
-          - rustup
-          - shotwell
-          - stow
-          - strace
-          - tealdeer
-          - thunderbird
-          - tmux
-          - unar
-          - unzip
-          - valgrind
-          - wget
-          - xournalpp
-          - xwayland
-          - yarnpkg
-          - yt-dlp
-          - gnome-tweaks
-          - gnome-shell-extensions
-        state: present
-    
-    # =========================================================================
-    # AM - APPIMAGE MANAGER
-    # =========================================================================
-    - name: Check if AM is installed
-      stat:
-        path: /opt/am/APP-MANAGER
-      register: am_installed
-    
-    - name: Download and install AM (AppImage Manager)
-      become: true
-      block:
-        - name: Download AM installation script
-          get_url:
-            url: https://raw.githubusercontent.com/ivan-hc/AM/main/INSTALL
-            dest: /tmp/am-install.sh
-            mode: '0755'
-        
-        - name: Install AM system-wide
-          shell: /tmp/am-install.sh
-          args:
-            creates: /opt/am/APP-MANAGER
-        
-        - name: Clean up AM installer
-          file:
-            path: /tmp/am-install.sh
-            state: absent
-      when: not am_installed.stat.exists
-    
-    - name: Install AppImage applications via AM
-      become: true
-      command: am -i {{ item }}
-      loop:
-        - telegram
-        - spotify
-        - postman
-        - devpod
-      args:
-        creates: /opt/am/modules/{{ item }}
-      ignore_errors: yes
-    
-    # =========================================================================
-    # GOOGLE CHROME
-    # =========================================================================
-    - name: Download Google Chrome .deb
-      get_url:
-        url: https://dl.google.com/linux/direct/google-chrome-stable_current_amd64.deb
-        dest: /tmp/google-chrome-stable_current_amd64.deb
-        mode: '0644'
-      register: chrome_download
-      
-    - name: Install Google Chrome
-      become: true
-      apt:
-        deb: /tmp/google-chrome-stable_current_amd64.deb
-        state: present
-      when: chrome_download.changed
-      
-    - name: Remove Chrome .deb file
-      file:
-        path: /tmp/google-chrome-stable_current_amd64.deb
-        state: absent
-    
-    # =========================================================================
-    # JETBRAINS TOOLBOX
-    # =========================================================================
-    - name: Create JetBrains Toolbox directories
-      file:
-        path: "{{ user_home }}/.local/bin"
-        state: directory
-        mode: '0755'
-    
-    - name: Check if JetBrains Toolbox is installed
-      stat:
-        path: "{{ user_home }}/.local/bin/jetbrains-toolbox"
-      register: toolbox_bin
-    
-    - name: Get latest JetBrains Toolbox URL
-      uri:
-        url: https://data.services.jetbrains.com/products/releases?code=TBA&latest=true&type=release
-        return_content: yes
-      register: toolbox_api
-      when: not toolbox_bin.stat.exists
-    
-    - name: Extract Toolbox download URL
-      set_fact:
-        toolbox_url: "{{ toolbox_api.json.TBA[0].downloads.linux.link }}"
-      when: not toolbox_bin.stat.exists
-    
-    - name: Download JetBrains Toolbox
-      get_url:
-        url: "{{ toolbox_url }}"
-        dest: /tmp/jetbrains-toolbox.tar.gz
-        mode: '0644'
-      when: not toolbox_bin.stat.exists
-    
-    - name: Extract JetBrains Toolbox
-      unarchive:
-        src: /tmp/jetbrains-toolbox.tar.gz
-        dest: /tmp
-        remote_src: yes
-      when: not toolbox_bin.stat.exists
-    
-    - name: Find extracted Toolbox binary
-      find:
-        paths: /tmp
-        patterns: 'jetbrains-toolbox'
-        recurse: yes
-        file_type: file
-      register: toolbox_binary
-      when: not toolbox_bin.stat.exists
-    
-    - name: Copy Toolbox to ~/.local/bin
-      copy:
-        src: "{{ toolbox_binary.files[0].path }}"
-        dest: "{{ user_home }}/.local/bin/jetbrains-toolbox"
-        mode: '0755'
-        remote_src: yes
-      when: not toolbox_bin.stat.exists and toolbox_binary.matched > 0
-    
-    - name: Add ~/.local/bin to PATH in .bashrc
-      lineinfile:
-        path: "{{ user_home }}/.bashrc"
-        line: 'export PATH="$HOME/.local/bin:$PATH"'
-        create: yes
-        state: present
-    
-    # =========================================================================
-    # MISE
-    # =========================================================================
-    - name: Check if Mise is installed
-      command: mise --version
-      register: mise_check
-      ignore_errors: true
-      changed_when: false
-    
-    - name: Install Mise
-      shell: curl https://mise.run | sh
-      args:
-        creates: "{{ user_home }}/.local/bin/mise"
-      when: mise_check.rc != 0
-    
-    - name: Add Mise activation to .bashrc
-      lineinfile:
-        path: "{{ user_home }}/.bashrc"
-        line: 'eval "$(mise activate bash)"'
-        create: yes
-        state: present
-    
-    - name: Install Java via Mise
-      shell: |
-        export PATH="{{ user_home }}/.local/bin:$PATH"
-        mise install java@{{ java_version }}
-        mise use --global java@{{ java_version }}
-      args:
-        creates: "{{ user_home }}/.local/share/mise/installs/java"
-    
-    - name: Install Maven via Mise
-      shell: |
-        export PATH="{{ user_home }}/.local/bin:$PATH"
-        mise install maven@latest
-        mise use --global maven@latest
-      args:
-        creates: "{{ user_home }}/.local/share/mise/installs/maven"
-    
-    # =========================================================================
-    # YUBIKEY
-    # =========================================================================
-    - name: Install YubiKey packages
-      become: true
-      apt:
-        name:
-          - yubikey-manager
-          - yubikey-personalization
-          - libpam-u2f
-          - pcscd
-          - libfido2-1
-          - libfido2-dev
-          - gpg
-          - scdaemon
-          - pcsc-tools
-        state: present
-    
-    - name: Enable and start pcscd service
-      become: true
-      systemd:
-        name: pcscd
-        enabled: yes
-        state: started
-    
-    - name: Create YubiKey udev rules
-      become: true
-      copy:
-        dest: /etc/udev/rules.d/70-yubikey.rules
-        content: |
-          # YubiKey
-          KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1050", MODE="0660", GROUP="plugdev", TAG+="uaccess"
-          ACTION=="add|change", SUBSYSTEM=="usb", ATTR{idVendor}=="1050", MODE="0660", GROUP="plugdev", TAG+="uaccess"
-        mode: '0644'
-      notify: Reload udev rules
-    
-    - name: Add user to plugdev group
-      become: true
-      user:
-        name: "{{ ansible_user_id }}"
-        groups: plugdev
-        append: yes
-    
-    - name: Create Yubico config directory
-      file:
-        path: "{{ user_home }}/.config/Yubico"
-        state: directory
-        mode: '0755'
-    
-    # =========================================================================
-    # CONFIGURAZIONI POST-INSTALL
-    # =========================================================================
-    - name: Build bat cache
-      command: batcat cache --build
-      changed_when: false
-      ignore_errors: yes
-    
-    - name: Install Rust stable toolchain
-      command: rustup toolchain install stable
-      changed_when: false
-      ignore_errors: yes
-    
-    - name: Add user to bluetooth group
-      become: true
-      user:
-        name: "{{ ansible_user_id }}"
-        groups: bluetooth
-        append: yes
-    
-    # =========================================================================
-    # PAPERWM
-    # =========================================================================
-    - name: Clone PaperWM repository
-      git:
-        repo: https://github.com/paperwm/PaperWM.git
-        dest: "{{ user_home }}/.local/share/gnome-shell/extensions/paperwm@paperwm.github.com"
-        update: yes
-    
-    # =========================================================================
-    # DOTFILES
-    # =========================================================================
-    - name: Clone dotfiles repository
-      git:
-        repo: "{{ dotfiles_repo }}"
-        dest: "{{ dotfiles_dir }}"
-        update: yes
-    
-    - name: Stow dotfiles packages
-      shell: |
-        cd {{ dotfiles_dir }}
-        stow --restow {{ item }}
-      loop:
-        - bash
-        - starship
-        - emacs
-        - git
-        - fastfetch
-        - flameshot
-        - tmux
-        - bat
-      register: stow_result
-      changed_when: stow_result.rc == 0
-      failed_when: false
-    
+    base_packages:
+      - btrfs-progs
+      - ca-certificates
+      - curl
+      - dnf-plugins-core
+      - gcc
+      - gcc-c++
+      - git
+      - gnupg2
+      - make
+      - wget
+
+    cli_packages:
+      - NetworkManager-openconnect
+      - bat
+      - clang
+      - clang-tools-extra
+      - dbus-devel
+      - entr
+      - ffmpeg
+      - ffmpegthumbnailer
+      - flameshot
+      - fzf
+      - gdb
+      - gh
+      - git-crypt
+      - glab
+      - golang
+      - inotify-tools
+      - jq
+      - libreoffice
+      - ltrace
+      - luarocks
+      - mesa-dri-drivers
+      - net-tools
+      - neovim
+      - ninja-build
+      - nodejs
+      - npm
+      - openssh-clients
+      - pinentry
+      - pinentry-gtk
+      - pipx
+      - pkgconf
+      - playerctl
+      - plocate
+      - podman
+      - poppler-utils
+      - python3-flake8
+      - python3-isort
+      - python3-mypy
+      - python3-pip
+      - python3-pylint
+      - python3-pytest
+      - python3-virtualenv
+      - qemu-system-x86-core
+      - qt5ct
+      - qt6ct
+      - rclone
+      - ripgrep
+      - rsync
+      - rustup
+      - stow
+      - strace
+      - tealdeer
+      - thunderbird
+      - tmux
+      - unar
+      - unzip
+      - valgrind
+      - xournalpp
+      - xorg-x11-server-Xwayland
+      - yt-dlp
+
+    optional_cli_packages:
+      - delta
+      - fastfetch
+      - fd-find
+      - papirus-icon-theme
+      - shotwell
+      - yarnpkg
+
+    flatpak_apps:
+      - com.google.Chrome
+      - org.telegram.desktop
+      - com.spotify.Client
+      - com.getpostman.Postman
+      - sh.loft.devpod
+
+    stow_packages:
+      - bash
+      - starship
+      - emacs
+      - git
+      - fastfetch
+      - flameshot
+      - tmux
+      - bat
+
+    btrfs_extra_subvolumes:
+      - "@log"
+      - "@cache"
+      - "@snapshots"
+      - "@libvirt"
+
+    sysctl_hardening:
+      - { key: "kernel.randomize_va_space", value: "2" }
+      - { key: "kernel.kptr_restrict", value: "2" }
+      - { key: "kernel.dmesg_restrict", value: "1" }
+      - { key: "kernel.yama.ptrace_scope", value: "1" }
+      - { key: "fs.suid_dumpable", value: "0" }
+      - { key: "fs.protected_hardlinks", value: "1" }
+      - { key: "fs.protected_symlinks", value: "1" }
+      - { key: "fs.protected_fifos", value: "2" }
+      - { key: "fs.protected_regular", value: "2" }
+      - { key: "net.ipv4.conf.all.rp_filter", value: "1" }
+      - { key: "net.ipv4.conf.default.rp_filter", value: "1" }
+      - { key: "net.ipv4.icmp_echo_ignore_broadcasts", value: "1" }
+      - { key: "net.ipv4.conf.all.accept_redirects", value: "0" }
+      - { key: "net.ipv4.conf.default.accept_redirects", value: "0" }
+      - { key: "net.ipv6.conf.all.accept_redirects", value: "0" }
+      - { key: "net.ipv6.conf.default.accept_redirects", value: "0" }
+
+  tasks:
+    - name: Run preflight checks
+      import_tasks: tasks/00_preflight.yml
+
+    - name: Configure Btrfs layout
+      import_tasks: tasks/10_btrfs_layout.yml
+
+    - name: Apply hardening baseline
+      import_tasks: tasks/20_hardening.yml
+
+    - name: Install RPM packages
+      import_tasks: tasks/30_packages.yml
+
+    - name: Configure Snapper and GRUB
+      import_tasks: tasks/11_snapper_grub.yml
+
+    - name: Install Flatpak applications
+      import_tasks: tasks/40_flatpak.yml
+
+    - name: Install developer tooling
+      import_tasks: tasks/50_tooling.yml
+
+    - name: Configure YubiKey support
+      import_tasks: tasks/60_yubikey.yml
+
+    - name: Configure dotfiles
+      import_tasks: tasks/70_dotfiles.yml
+
   handlers:
+    - name: Regenerate grub config
+      become: true
+      shell: |
+        if [ -d /sys/firmware/efi ]; then
+          grub2-mkconfig -o /boot/efi/EFI/fedora/grub.cfg
+        else
+          grub2-mkconfig -o /boot/grub2/grub.cfg
+        fi
+
     - name: Reload udev rules
       become: true
-      command: udevadm control --reload-rules && udevadm trigger
+      command: udevadm control --reload-rules
+
+    - name: Trigger udev
+      become: true
+      command: udevadm trigger

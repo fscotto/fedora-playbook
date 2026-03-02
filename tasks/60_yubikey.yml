@@ -1,0 +1,39 @@
+- name: Install YubiKey and smartcard packages
+  become: true
+  dnf:
+    name:
+      - fido2-tools
+      - gnupg2
+      - opensc
+      - pam-u2f
+      - pcsc-lite
+      - pcsc-lite-ccid
+      - yubikey-manager
+      - yubikey-personalization
+    state: present
+
+- name: Enable and start pcscd socket
+  become: true
+  systemd:
+    name: pcscd.socket
+    enabled: true
+    state: started
+
+- name: Create YubiKey udev rules
+  become: true
+  copy:
+    dest: /etc/udev/rules.d/70-yubikey.rules
+    mode: "0644"
+    content: |
+      # YubiKey FIDO/U2F access
+      KERNEL=="hidraw*", SUBSYSTEM=="hidraw", ATTRS{idVendor}=="1050", MODE="0660", TAG+="uaccess"
+      ACTION=="add|change", SUBSYSTEM=="usb", ATTR{idVendor}=="1050", MODE="0660", TAG+="uaccess"
+  notify:
+    - Reload udev rules
+    - Trigger udev
+
+- name: Create Yubico config directory
+  file:
+    path: "{{ user_home }}/.config/Yubico"
+    state: directory
+    mode: "0755"

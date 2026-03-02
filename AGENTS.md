@@ -1,139 +1,148 @@
-# AGENTS.md - Debian Ansible Playbook
+# AGENTS.md - Fedora XFCE 43 Ansible Playbook
 
 ## Project Overview
+This repository contains a local Ansible playbook that configures a Fedora XFCE 43 workstation.
+It installs developer tooling, security packages (including YubiKey support), desktop apps via Flatpak,
+and user-level setup (Mise, dotfiles, JetBrains Toolbox).
 
-This is an Ansible playbook for setting up a Debian 13 Trixie workstation. It automates the installation of development tools, utilities, and system configurations.
+The playbook is Fedora-only by design.
 
-## Commands
+## Repository Layout
+- `playbook.yml`: main local playbook orchestrating modular task imports
+- `tasks/`: modular task files grouped by domain (preflight, btrfs, hardening, packages, flatpak, tooling, yubikey, dotfiles)
+- `run-ansible.sh`: wrapper that bootstraps Ansible and runs the playbook
+- `requirements.yml`: optional Ansible Galaxy dependencies
+- `README.md`: usage and post-run manual tasks
 
-### Run the Playbook
+## Build / Lint / Test Commands
 
+### Full execution
 ```bash
-# Using the wrapper script (recommended)
 chmod +x run-ansible.sh
 ./run-ansible.sh
 
-# Manual execution
 ansible-playbook -i localhost, -c local playbook.yml --ask-become-pass
 ```
 
-### Syntax Check
-
+### Syntax and introspection
 ```bash
-# Check playbook syntax
 ansible-playbook playbook.yml --syntax-check
-
-# List all tasks without executing
 ansible-playbook playbook.yml --list-tasks
+ansible-playbook playbook.yml --list-hosts
 ```
 
 ### Linting
-
 ```bash
-# Install ansible-lint first
-pip install ansible-lint
-
-# Lint the playbook
+python3 -m pip install --user ansible-lint yamllint
 ansible-lint playbook.yml
-
-# Install yamllint for YAML validation
-pip install yamllint
-
-# Lint YAML files
 yamllint .
 yamllint playbook.yml
 ```
 
-### Dry Run (Check Mode)
-
+### Shell script checks
 ```bash
-# Run in check mode (no changes made)
-ansible-playbook -i localhost, -c local playbook.yml --ask-become-pass --check
+bash -n run-ansible.sh
+shellcheck run-ansible.sh
 ```
 
----
+### Validation strategy
+There are no unit tests. Validate with syntax + lint + check mode + targeted task run.
+
+```bash
+ansible-playbook -i localhost, -c local playbook.yml --ask-become-pass --check --diff
+
+ansible-playbook -i localhost, -c local playbook.yml --ask-become-pass
+ansible-playbook -i localhost, -c local playbook.yml --ask-become-pass
+```
+
+### Single-test equivalent (single task)
+Use one of these patterns when you need focused verification.
+
+```bash
+ansible-playbook -i localhost, -c local playbook.yml --ask-become-pass \
+  --start-at-task "Install YubiKey packages"
+
+ansible-playbook -i localhost, -c local playbook.yml --ask-become-pass \
+  --start-at-task "Install YubiKey packages" --check --diff
+
+ansible-playbook -i localhost, -c local playbook.yml --ask-become-pass --step
+```
+
+Note: the playbook currently does not define `tags`; if focused runs become common,
+prefer adding explicit tags to major task groups.
 
 ## Code Style Guidelines
 
-### YAML Formatting
+### YAML formatting
+- Use 2-space indentation; never tabs.
+- Keep lines near or under 120 chars when practical.
+- Do not leave trailing whitespace.
+- Use blank lines between logical task blocks.
+- Prefer double quotes for templated strings and paths.
+- Use `true` / `false` for booleans.
 
-- **Indentation**: Use 2 spaces for indentation (no tabs)
-- **Line length**: Keep lines under 120 characters when practical
-- **Trailing spaces**: Never include trailing whitespace
-- **Blank lines**: Use blank lines to separate logical sections
-- **Quotes**: Use quotes for strings containing special characters or colons
+### Modules and imports (Ansible equivalent)
+- Prefer Ansible modules over `shell`/`command`.
+- Use `dnf` for package management.
+- Use `rpm_key` + `yum_repository` for external repositories.
+- Prefer `file`, `copy`, `lineinfile`, `git`, `systemd`, `stat`, `uri`, `get_url`, `unarchive`.
+- Use `command` only when no higher-level module exists.
+- Use `shell` only for shell-specific behavior (pipes, env activation, multi-line scripts).
 
-### Ansible Best Practices
+### Types, templates, and variables
+- Store reusable values in play-level `vars`.
+- Use descriptive snake_case names (`user_home`, `flatpak_apps`, `stow_packages`).
+- Reference variables with `{{ ... }}` consistently.
+- Keep list data as YAML lists, not comma-separated strings.
+- Avoid hardcoded literals in task bodies when a variable improves clarity.
 
-#### Task Naming
-- Use descriptive names for all tasks
-- Start with verb: "Install X", "Configure Y", "Enable Z"
-- Include context: "Enable contrib, non-free and non-free-firmware repositories"
+### Naming conventions
+- Give every task a clear action-first name.
+- Start task names with verbs: `Install`, `Configure`, `Enable`, `Create`, `Clone`, `Verify`.
+- Include context in the task name for readability.
+- Name handlers by effect (`Reload udev rules`).
 
-#### Idempotency
-- Always use appropriate Ansible modules (apt, file, lineinfile, etc.)
-- Use `creates` or `when` conditions to skip already-completed tasks
-- Use `changed_when` when shell/command tasks don't actually change state
-- Use `ignore_errors` sparingly and only when failure is acceptable
+### Idempotency and change reporting
+- Ensure playbook reruns are safe and predictable.
+- Use `creates`, `stat` + `when`, or guard conditions for one-time actions.
+- Set `changed_when: false` for probe/read-only commands.
+- Use handlers for operations that should happen only after changes.
+- Avoid tasks that always report changed unless explicitly intended.
 
-#### Module Usage
-- Prefer built-in modules over shell/command when possible:
-  - Use `apt` instead of `shell: apt install`
-  - Use `file` instead of `shell: mkdir -p`
-  - Use `copy` instead of `shell: cp`
-  - Use `lineinfile` for single line modifications
-  - Use `template` for configuration files
+### Error handling
+- Fail fast on real errors.
+- Use `ignore_errors: true` only for explicitly optional operations.
+- Use `failed_when` when return-code semantics need customization.
+- Use `assert` to enforce preconditions (for example, Fedora-only checks).
 
-#### Variables
-- Define variables in the `vars` section at the play level
-- Use descriptive variable names: `user_home`, `dotfiles_repo`, `java_version`
-- Always reference variables with `{{ }}` syntax
-- Use `ansible_env.HOME` for user home directory
+### Privilege escalation
+- Keep play-level `become: false`.
+- Add `become: true` only on tasks that require root.
+- Use `--ask-become-pass` for manual runs.
 
-#### Become/Privilege Escalation
-- Set `become: false` at play level
-- Use `become: true` only on specific tasks that need root
-- Always use `--ask-become-pass` or `-K` when running
+### Shell script conventions (`run-ansible.sh`)
+- Keep `set -euo pipefail`.
+- Quote variable expansions unless splitting is intentional.
+- Use explicit preflight checks and clear error messages.
+- Keep script behavior idempotent where possible.
+- Avoid destructive commands without explicit user intent.
 
-#### Handlers
-- Use handlers for actions that should run only on changes (e.g., reload services)
-- Name handlers descriptively: "Reload udev rules", "Restart nginx"
+## Fedora XFCE Notes
+- Desktop baseline is Fedora XFCE Spin.
+- GNOME-only customizations are out of scope.
+- RPM Fusion is enabled by the playbook.
+- Java and Maven are managed by Mise, not system defaults.
+- Flatpak (Flathub) manages desktop apps (`com.google.Chrome`, `org.telegram.desktop`, `com.spotify.Client`, `com.getpostman.Postman`, `sh.loft.devpod`).
 
-#### Error Handling
-- Use `ignore_errors: yes` only for truly optional operations
-- Register command results and check `rc` when needed
-- Use `failed_when` and `changed_when` for fine-grained control
+## Editor/Assistant Rule Files
+No repository-specific rule files were found during analysis:
+- `.cursor/rules/` not present
+- `.cursorrules` not present
+- `.github/copilot-instructions.md` not present
 
-### File Organization
+If these files are added later, agents must treat them as higher-priority guidance.
 
-- Main playbook: `playbook.yml`
-- Requirements: `requirements.yml` (ansible-galaxy collections)
-- Wrapper script: `run-ansible.sh`
-
-### Git Commits
-
-- Use conventional commit format
-- Example: `feat: add Java via Mise installation`
-- Run `git status` and `git diff` before committing
-
----
-
-## Testing Strategy
-
-Since this is a configuration management playbook:
-
-1. **Syntax check**: Always run `--syntax-check` before execution
-2. **Check mode**: Use `--check` to preview changes
-3. **Idempotency**: The playbook is designed to be re-run safely
-4. **Manual testing**: Some tasks require post-reboot configuration (see README.md)
-
----
-
-## Notes for Agents
-
-- The playbook assumes local execution (`localhost`)
-- Some tasks require YubiKey hardware to be present
-- JetBrains Toolbox requires manual IDE installation after first run
-- PaperWM GNOME extension must be enabled manually: `gnome-extensions enable paperwm@paperwm.github.com`
-- Java and Maven are installed via Mise (not APT)
-- AppImage apps (Telegram, Spotify, Postman, DevPod) are managed via AM
+## Commit Guidance
+- Use conventional commits (`feat:`, `fix:`, `docs:`, `chore:`, `refactor:`).
+- Keep commit scope focused (playbook logic vs docs vs wrapper script).
+- Before commit, run `git status`, `git diff`, syntax checks, and lint commands.

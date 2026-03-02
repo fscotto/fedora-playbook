@@ -1,0 +1,202 @@
+- name: Configure additional Btrfs subvolumes
+  when: root_fs_type.stdout == "btrfs"
+  become: true
+  block:
+    - name: Detect root filesystem source
+      command: findmnt -n -o SOURCE /
+      register: root_fs_source
+      changed_when: false
+
+    - name: Create temporary mountpoint for Btrfs top-level
+      file:
+        path: /mnt/btrfs-top-level
+        state: directory
+        mode: "0755"
+
+    - name: Mount Btrfs top-level subvolume
+      mount:
+        path: /mnt/btrfs-top-level
+        src: "{{ root_fs_source.stdout }}"
+        fstype: btrfs
+        opts: subvolid=5
+        state: mounted
+
+    - name: Create additional Btrfs subvolumes
+      command: "btrfs subvolume create /mnt/btrfs-top-level/{{ item }}"
+      args:
+        creates: "/mnt/btrfs-top-level/{{ item }}"
+      loop: "{{ btrfs_extra_subvolumes }}"
+
+    - name: Check current /var/cache mount options
+      command: findmnt -n -o OPTIONS /var/cache
+      register: var_cache_mount_opts
+      changed_when: false
+      failed_when: false
+
+    - name: Check current /var/log mount options
+      command: findmnt -n -o OPTIONS /var/log
+      register: var_log_mount_opts
+      changed_when: false
+      failed_when: false
+
+    - name: Check current /var/lib/libvirt mount options
+      command: findmnt -n -o OPTIONS /var/lib/libvirt
+      register: libvirt_mount_opts
+      changed_when: false
+      failed_when: false
+
+    - name: Create temporary mountpoint for @cache migration
+      file:
+        path: /mnt/btrfs-migrate-cache
+        state: directory
+        mode: "0755"
+      when: "'subvol=@cache' not in var_cache_mount_opts.stdout"
+
+    - name: Mount @cache subvolume for migration
+      mount:
+        path: /mnt/btrfs-migrate-cache
+        src: "{{ root_fs_source.stdout }}"
+        fstype: btrfs
+        opts: subvol=@cache
+        state: mounted
+      when: "'subvol=@cache' not in var_cache_mount_opts.stdout"
+
+    - name: Copy existing /var/cache data into @cache
+      command: rsync -aHAX --numeric-ids /var/cache/ /mnt/btrfs-migrate-cache/
+      when: "'subvol=@cache' not in var_cache_mount_opts.stdout"
+
+    - name: Empty /var/cache data from root subvolume
+      command: find /var/cache -mindepth 1 -xdev -delete
+      changed_when: true
+      when: "'subvol=@cache' not in var_cache_mount_opts.stdout"
+
+    - name: Unmount @cache migration mountpoint
+      mount:
+        path: /mnt/btrfs-migrate-cache
+        state: unmounted
+      failed_when: false
+      when: "'subvol=@cache' not in var_cache_mount_opts.stdout"
+
+    - name: Create temporary mountpoint for @log migration
+      file:
+        path: /mnt/btrfs-migrate-log
+        state: directory
+        mode: "0755"
+      when: "'subvol=@log' not in var_log_mount_opts.stdout"
+
+    - name: Mount @log subvolume for migration
+      mount:
+        path: /mnt/btrfs-migrate-log
+        src: "{{ root_fs_source.stdout }}"
+        fstype: btrfs
+        opts: subvol=@log
+        state: mounted
+      when: "'subvol=@log' not in var_log_mount_opts.stdout"
+
+    - name: Copy existing /var/log data into @log
+      command: rsync -aHAX --numeric-ids /var/log/ /mnt/btrfs-migrate-log/
+      when: "'subvol=@log' not in var_log_mount_opts.stdout"
+
+    - name: Empty /var/log data from root subvolume
+      command: find /var/log -mindepth 1 -xdev -delete
+      changed_when: true
+      when: "'subvol=@log' not in var_log_mount_opts.stdout"
+
+    - name: Unmount @log migration mountpoint
+      mount:
+        path: /mnt/btrfs-migrate-log
+        state: unmounted
+      failed_when: false
+      when: "'subvol=@log' not in var_log_mount_opts.stdout"
+
+    - name: Ensure /var/lib/libvirt directory exists
+      file:
+        path: /var/lib/libvirt
+        state: directory
+        mode: "0755"
+
+    - name: Create temporary mountpoint for @libvirt migration
+      file:
+        path: /mnt/btrfs-migrate-libvirt
+        state: directory
+        mode: "0755"
+      when: "'subvol=@libvirt' not in libvirt_mount_opts.stdout"
+
+    - name: Mount @libvirt subvolume for migration
+      mount:
+        path: /mnt/btrfs-migrate-libvirt
+        src: "{{ root_fs_source.stdout }}"
+        fstype: btrfs
+        opts: subvol=@libvirt
+        state: mounted
+      when: "'subvol=@libvirt' not in libvirt_mount_opts.stdout"
+
+    - name: Copy existing /var/lib/libvirt data into @libvirt
+      command: rsync -aHAX --numeric-ids /var/lib/libvirt/ /mnt/btrfs-migrate-libvirt/
+      when: "'subvol=@libvirt' not in libvirt_mount_opts.stdout"
+
+    - name: Empty /var/lib/libvirt data from root subvolume
+      command: find /var/lib/libvirt -mindepth 1 -xdev -delete
+      changed_when: true
+      when: "'subvol=@libvirt' not in libvirt_mount_opts.stdout"
+
+    - name: Unmount @libvirt migration mountpoint
+      mount:
+        path: /mnt/btrfs-migrate-libvirt
+        state: unmounted
+      failed_when: false
+      when: "'subvol=@libvirt' not in libvirt_mount_opts.stdout"
+
+    - name: Mount @cache on /var/cache
+      mount:
+        path: /var/cache
+        src: "{{ root_fs_source.stdout }}"
+        fstype: btrfs
+        opts: subvol=@cache,compress=zstd,noatime,nodev,nosuid,noexec
+        state: mounted
+
+    - name: Mount @log on /var/log
+      mount:
+        path: /var/log
+        src: "{{ root_fs_source.stdout }}"
+        fstype: btrfs
+        opts: subvol=@log,compress=zstd,noatime,nodev,nosuid,noexec
+        state: mounted
+
+    - name: Mount @libvirt on /var/lib/libvirt
+      mount:
+        path: /var/lib/libvirt
+        src: "{{ root_fs_source.stdout }}"
+        fstype: btrfs
+        opts: subvol=@libvirt,compress=zstd,noatime,nodev,nosuid
+        state: mounted
+
+  always:
+    - name: Ensure @cache migration mountpoint is unmounted
+      mount:
+        path: /mnt/btrfs-migrate-cache
+        state: unmounted
+      failed_when: false
+
+    - name: Ensure @log migration mountpoint is unmounted
+      mount:
+        path: /mnt/btrfs-migrate-log
+        state: unmounted
+      failed_when: false
+
+    - name: Ensure @libvirt migration mountpoint is unmounted
+      mount:
+        path: /mnt/btrfs-migrate-libvirt
+        state: unmounted
+      failed_when: false
+
+    - name: Unmount Btrfs top-level subvolume
+      mount:
+        path: /mnt/btrfs-top-level
+        state: unmounted
+      failed_when: false
+
+- name: Skip Btrfs subvolume setup on non-Btrfs root
+  debug:
+    msg: "Root filesystem is {{ root_fs_type.stdout }}. Skipping Btrfs subvolume setup."
+  when: root_fs_type.stdout != "btrfs"
