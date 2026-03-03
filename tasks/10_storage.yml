@@ -236,11 +236,22 @@
         name: snapper
         state: present
 
-    - name: Install grub-btrfs (optional)
+    - name: Check grub-btrfs package availability
+      command: dnf -q list --available grub-btrfs
+      register: grub_btrfs_available
+      changed_when: false
+      failed_when: false
+
+    - name: Install grub-btrfs when available
       dnf:
         name: grub-btrfs
         state: present
-      ignore_errors: true
+      when: grub_btrfs_available.rc == 0
+
+    - name: Warn when grub-btrfs is unavailable
+      debug:
+        msg: "grub-btrfs is not available in current repositories. Skipping GRUB snapshot menu integration package."
+      when: grub_btrfs_available.rc != 0
 
     - name: Check current /.snapshots mount options
       command: findmnt -n -o OPTIONS /.snapshots
@@ -294,6 +305,36 @@
         fstype: btrfs
         opts: subvol=@snapshots,compress=zstd,noatime,nodev,nosuid
         state: mounted
+
+    - name: Remove fsroot suffix artifacts from Btrfs sources in /etc/fstab
+      replace:
+        path: /etc/fstab
+        regexp: '^(\S+)\[[^\]]+\](\s+/\S+\s+btrfs\s+.*)$'
+        replace: '\1\2'
+
+    - name: Ensure canonical /etc/fstab entry for /var/cache
+      lineinfile:
+        path: /etc/fstab
+        regexp: '^\S+\s+/var/cache\s+btrfs\s+'
+        line: "{{ root_fs_source_device }} /var/cache btrfs subvol=@cache,compress=zstd,noatime,nodev,nosuid,noexec 0 0"
+
+    - name: Ensure canonical /etc/fstab entry for /var/log
+      lineinfile:
+        path: /etc/fstab
+        regexp: '^\S+\s+/var/log\s+btrfs\s+'
+        line: "{{ root_fs_source_device }} /var/log btrfs subvol=@log,compress=zstd,noatime,nodev,nosuid,noexec 0 0"
+
+    - name: Ensure canonical /etc/fstab entry for /var/lib/libvirt
+      lineinfile:
+        path: /etc/fstab
+        regexp: '^\S+\s+/var/lib/libvirt\s+btrfs\s+'
+        line: "{{ root_fs_source_device }} /var/lib/libvirt btrfs subvol=@libvirt,compress=zstd,noatime,nodev,nosuid 0 0"
+
+    - name: Ensure canonical /etc/fstab entry for /.snapshots
+      lineinfile:
+        path: /etc/fstab
+        regexp: '^\S+\s+/\.snapshots\s+btrfs\s+'
+        line: "{{ root_fs_source_device }} /.snapshots btrfs subvol=@snapshots,compress=zstd,noatime,nodev,nosuid 0 0"
 
     - name: Check if Snapper root config exists
       stat:
