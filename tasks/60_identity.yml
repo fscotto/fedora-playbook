@@ -40,8 +40,25 @@
     state: directory
     mode: "0755"
 
+- name: Detect connected YubiKey devices
+  command: ykman list
+  register: ykman_devices
+  changed_when: false
+  failed_when: false
+
+- name: Set YubiKey presence fact
+  set_fact:
+    yubikey_present: "{{ (ykman_devices.rc | default(1)) == 0 and (ykman_devices.stdout | default('') | trim | length > 0) }}"
+
+- name: Skip YubiKey enrollment tasks when device is not connected
+  debug:
+    msg: "No YubiKey detected. Skipping LUKS2 and PAM enrollment tasks."
+  when: not (yubikey_present | bool)
+
 - name: Configure YubiKey FIDO2 unlock for LUKS2 root volume
-  when: yubikey_enable_luks2 | bool
+  when:
+    - yubikey_enable_luks2 | bool
+    - yubikey_present | bool
   become: true
   block:
     - name: Detect root mount source
@@ -236,7 +253,9 @@
       when: root_mapper_name is not defined
 
 - name: Configure PAM U2F for login and sudo with password fallback
-  when: yubikey_enable_pam | bool
+  when:
+    - yubikey_enable_pam | bool
+    - yubikey_present | bool
   become: true
   block:
     - name: Verify authselect is available
