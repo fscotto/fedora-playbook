@@ -173,9 +173,9 @@
         fail_msg: "Root encrypted device is not LUKS2. YubiKey FIDO2 enrollment requires LUKS2."
       when: root_luks_device is defined
 
-    - name: Inspect existing LUKS tokens
-      command: "systemd-cryptenroll --dump {{ root_luks_device }}"
-      register: root_luks_tokens
+    - name: Inspect existing LUKS metadata
+      command: "cryptsetup luksDump {{ root_luks_device }}"
+      register: root_luks_metadata
       changed_when: false
       when: root_luks_device is defined
 
@@ -189,7 +189,7 @@
       register: yubikey_luks_enroll
       when:
         - root_luks_device is defined
-        - root_luks_tokens.stdout is not search('(?i)fido2')
+        - root_luks_metadata.stdout is not search('(?i)(systemd-fido2|fido2)')
       notify: Regenerate initramfs
 
     - name: Build updated /etc/crypttab options for FIDO2
