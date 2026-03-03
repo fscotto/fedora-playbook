@@ -30,6 +30,21 @@
       set_fact:
         root_fs_source_device: "{{ root_fs_source.stdout | regex_replace('\\[.*\\]$', '') }}"
 
+    - name: Resolve root filesystem UUID
+      command: "blkid -s UUID -o value {{ root_fs_source_device }}"
+      register: root_fs_source_uuid
+      changed_when: false
+
+    - name: Assert root filesystem UUID is available
+      assert:
+        that:
+          - root_fs_source_uuid.stdout | trim | length > 0
+        fail_msg: "Could not resolve UUID for root filesystem device {{ root_fs_source_device }}."
+
+    - name: Set root filesystem mount source as UUID
+      set_fact:
+        root_fs_source_spec: "UUID={{ root_fs_source_uuid.stdout | trim }}"
+
     - name: Create temporary mountpoint for Btrfs top-level
       file:
         path: /mnt/btrfs-top-level
@@ -176,7 +191,7 @@
     - name: Mount @cache on /var/cache
       mount:
         path: /var/cache
-        src: "{{ root_fs_source_device }}"
+        src: "{{ root_fs_source_spec }}"
         fstype: btrfs
         opts: subvol=@cache,compress=zstd,noatime,nodev,nosuid,noexec
         state: mounted
@@ -184,7 +199,7 @@
     - name: Mount @log on /var/log
       mount:
         path: /var/log
-        src: "{{ root_fs_source_device }}"
+        src: "{{ root_fs_source_spec }}"
         fstype: btrfs
         opts: subvol=@log,compress=zstd,noatime,nodev,nosuid,noexec
         state: mounted
@@ -192,7 +207,7 @@
     - name: Mount @libvirt on /var/lib/libvirt
       mount:
         path: /var/lib/libvirt
-        src: "{{ root_fs_source_device }}"
+        src: "{{ root_fs_source_spec }}"
         fstype: btrfs
         opts: subvol=@libvirt,compress=zstd,noatime,nodev,nosuid
         state: mounted
@@ -312,7 +327,7 @@
     - name: Mount @snapshots on /.snapshots
       mount:
         path: /.snapshots
-        src: "{{ root_fs_source_device }}"
+        src: "{{ root_fs_source_spec }}"
         fstype: btrfs
         opts: subvol=@snapshots,compress=zstd,noatime,nodev,nosuid
         state: mounted
@@ -327,25 +342,25 @@
       lineinfile:
         path: /etc/fstab
         regexp: '^\S+\s+/var/cache\s+btrfs\s+'
-        line: "{{ root_fs_source_device }} /var/cache btrfs subvol=@cache,compress=zstd,noatime,nodev,nosuid,noexec 0 0"
+        line: "{{ root_fs_source_spec }} /var/cache btrfs subvol=@cache,compress=zstd,noatime,nodev,nosuid,noexec 0 0"
 
     - name: Ensure canonical /etc/fstab entry for /var/log
       lineinfile:
         path: /etc/fstab
         regexp: '^\S+\s+/var/log\s+btrfs\s+'
-        line: "{{ root_fs_source_device }} /var/log btrfs subvol=@log,compress=zstd,noatime,nodev,nosuid,noexec 0 0"
+        line: "{{ root_fs_source_spec }} /var/log btrfs subvol=@log,compress=zstd,noatime,nodev,nosuid,noexec 0 0"
 
     - name: Ensure canonical /etc/fstab entry for /var/lib/libvirt
       lineinfile:
         path: /etc/fstab
         regexp: '^\S+\s+/var/lib/libvirt\s+btrfs\s+'
-        line: "{{ root_fs_source_device }} /var/lib/libvirt btrfs subvol=@libvirt,compress=zstd,noatime,nodev,nosuid 0 0"
+        line: "{{ root_fs_source_spec }} /var/lib/libvirt btrfs subvol=@libvirt,compress=zstd,noatime,nodev,nosuid 0 0"
 
     - name: Ensure canonical /etc/fstab entry for /.snapshots
       lineinfile:
         path: /etc/fstab
         regexp: '^\S+\s+/\.snapshots\s+btrfs\s+'
-        line: "{{ root_fs_source_device }} /.snapshots btrfs subvol=@snapshots,compress=zstd,noatime,nodev,nosuid 0 0"
+        line: "{{ root_fs_source_spec }} /.snapshots btrfs subvol=@snapshots,compress=zstd,noatime,nodev,nosuid 0 0"
 
     - name: Check Snapper root config availability
       command: snapper -c root get-config
