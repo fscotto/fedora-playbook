@@ -49,6 +49,26 @@
       register: root_mount_source
       changed_when: false
 
+    - name: Detect crypt mapper in root ancestry
+      shell: "lsblk -sno TYPE,NAME {{ root_mount_source.stdout | quote }} | awk '$1==\"crypt\" {print $2; exit}'"
+      register: root_crypt_mapper_name
+      changed_when: false
+      failed_when: false
+
+    - name: Resolve backing block device from detected crypt mapper
+      command: "lsblk -ndo PKNAME /dev/mapper/{{ root_crypt_mapper_name.stdout }}"
+      register: root_crypt_mapper_pkname
+      changed_when: false
+      failed_when: false
+      when: root_crypt_mapper_name.stdout | length > 0
+
+    - name: Set LUKS device path from detected crypt mapper chain
+      set_fact:
+        root_luks_device: "/dev/{{ root_crypt_mapper_pkname.stdout }}"
+      when:
+        - root_crypt_mapper_pkname is defined
+        - root_crypt_mapper_pkname.stdout | length > 0
+
     - name: Derive root mapper name
       set_fact:
         root_mapper_name: "{{ root_mount_source.stdout | regex_replace('^/dev/mapper/', '') }}"
