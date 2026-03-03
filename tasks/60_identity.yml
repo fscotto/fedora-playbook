@@ -49,8 +49,12 @@
       register: root_mount_source
       changed_when: false
 
+    - name: Normalize root mount source device path
+      set_fact:
+        root_mount_source_device: "{{ root_mount_source.stdout | regex_replace('\\[.*\\]$', '') }}"
+
     - name: Detect crypt mapper in root ancestry
-      shell: "lsblk -sno TYPE,NAME {{ root_mount_source.stdout | quote }} | awk '$1==\"crypt\" {print $2; exit}'"
+      shell: "lsblk -sno TYPE,NAME {{ root_mount_source_device | quote }} | awk '$1==\"crypt\" {print $2; exit}'"
       register: root_crypt_mapper_name
       changed_when: false
       failed_when: false
@@ -71,8 +75,8 @@
 
     - name: Derive root mapper name
       set_fact:
-        root_mapper_name: "{{ root_mount_source.stdout | regex_replace('^/dev/mapper/', '') }}"
-      when: root_mount_source.stdout is match('^/dev/mapper/.+')
+        root_mapper_name: "{{ root_mount_source_device | regex_replace('^/dev/mapper/', '') }}"
+      when: root_mount_source_device is match('^/dev/mapper/.+')
 
     - name: Read root mapping entry from /etc/crypttab
       command: "awk '$1 !~ /^#/ && $1==\"{{ root_mapper_name }}\" {print; exit}' /etc/crypttab"
@@ -132,7 +136,7 @@
         - (root_mapper_status.stdout | regex_search('device:\\s*(\\S+)', '\\1') | default('', true)) | length > 0
 
     - name: Resolve backing block device for root mapper
-      command: "lsblk -ndo PKNAME {{ root_mount_source.stdout }}"
+      command: "lsblk -ndo PKNAME {{ root_mount_source_device }}"
       register: root_backing_pkname
       changed_when: false
       failed_when: false
@@ -150,7 +154,7 @@
 
     - name: Warn when LUKS backing device cannot be resolved
       debug:
-        msg: "Could not resolve backing block device for {{ root_mount_source.stdout }}. Skipping LUKS2 FIDO2 enrollment."
+        msg: "Could not resolve backing block device for {{ root_mount_source_device }}. Skipping LUKS2 FIDO2 enrollment."
       when:
         - root_mapper_name is defined
         - root_luks_device is not defined
@@ -227,7 +231,7 @@
 
     - name: Skip LUKS2 YubiKey setup when root is not mapper-backed
       debug:
-        msg: "Root source is {{ root_mount_source.stdout }}. Skipping LUKS2 FIDO2 enrollment."
+        msg: "Root source is {{ root_mount_source_device }}. Skipping LUKS2 FIDO2 enrollment."
       when: root_mapper_name is not defined
 
 - name: Configure PAM U2F for login and sudo with password fallback

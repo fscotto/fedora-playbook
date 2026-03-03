@@ -22,9 +22,13 @@
   become: true
   block:
     - name: Detect root filesystem source
-      command: findmnt -n -o SOURCE /
+      command: findmnt -n -o SOURCE --nofsroot /
       register: root_fs_source
       changed_when: false
+
+    - name: Normalize root filesystem source device path
+      set_fact:
+        root_fs_source_device: "{{ root_fs_source.stdout | regex_replace('\\[.*\\]$', '') }}"
 
     - name: Create temporary mountpoint for Btrfs top-level
       file:
@@ -35,7 +39,7 @@
     - name: Mount Btrfs top-level subvolume
       mount:
         path: /mnt/btrfs-top-level
-        src: "{{ root_fs_source.stdout }}"
+        src: "{{ root_fs_source_device }}"
         fstype: btrfs
         opts: subvolid=5
         state: mounted
@@ -74,7 +78,7 @@
     - name: Mount @cache subvolume for migration
       mount:
         path: /mnt/btrfs-migrate-cache
-        src: "{{ root_fs_source.stdout }}"
+        src: "{{ root_fs_source_device }}"
         fstype: btrfs
         opts: subvol=@cache
         state: mounted
@@ -107,7 +111,7 @@
     - name: Mount @log subvolume for migration
       mount:
         path: /mnt/btrfs-migrate-log
-        src: "{{ root_fs_source.stdout }}"
+        src: "{{ root_fs_source_device }}"
         fstype: btrfs
         opts: subvol=@log
         state: mounted
@@ -146,7 +150,7 @@
     - name: Mount @libvirt subvolume for migration
       mount:
         path: /mnt/btrfs-migrate-libvirt
-        src: "{{ root_fs_source.stdout }}"
+        src: "{{ root_fs_source_device }}"
         fstype: btrfs
         opts: subvol=@libvirt
         state: mounted
@@ -172,7 +176,7 @@
     - name: Mount @cache on /var/cache
       mount:
         path: /var/cache
-        src: "{{ root_fs_source.stdout }}"
+        src: "{{ root_fs_source_device }}"
         fstype: btrfs
         opts: subvol=@cache,compress=zstd,noatime,nodev,nosuid,noexec
         state: mounted
@@ -180,7 +184,7 @@
     - name: Mount @log on /var/log
       mount:
         path: /var/log
-        src: "{{ root_fs_source.stdout }}"
+        src: "{{ root_fs_source_device }}"
         fstype: btrfs
         opts: subvol=@log,compress=zstd,noatime,nodev,nosuid,noexec
         state: mounted
@@ -188,7 +192,7 @@
     - name: Mount @libvirt on /var/lib/libvirt
       mount:
         path: /var/lib/libvirt
-        src: "{{ root_fs_source.stdout }}"
+        src: "{{ root_fs_source_device }}"
         fstype: btrfs
         opts: subvol=@libvirt,compress=zstd,noatime,nodev,nosuid
         state: mounted
@@ -260,7 +264,7 @@
     - name: Mount @snapshots subvolume for migration
       mount:
         path: /mnt/btrfs-migrate-snapshots
-        src: "{{ root_fs_source.stdout }}"
+        src: "{{ root_fs_source_device }}"
         fstype: btrfs
         opts: subvol=@snapshots
         state: mounted
@@ -286,7 +290,7 @@
     - name: Mount @snapshots on /.snapshots
       mount:
         path: /.snapshots
-        src: "{{ root_fs_source.stdout }}"
+        src: "{{ root_fs_source_device }}"
         fstype: btrfs
         opts: subvol=@snapshots,compress=zstd,noatime,nodev,nosuid
         state: mounted
