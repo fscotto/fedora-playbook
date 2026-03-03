@@ -336,15 +336,30 @@
         regexp: '^\S+\s+/\.snapshots\s+btrfs\s+'
         line: "{{ root_fs_source_device }} /.snapshots btrfs subvol=@snapshots,compress=zstd,noatime,nodev,nosuid 0 0"
 
-    - name: Check if Snapper root config exists
-      stat:
-        path: /etc/snapper/configs/root
-      register: snapper_root_config
+    - name: Check Snapper root config availability
+      command: snapper -c root get-config
+      register: snapper_root_config_check
+      changed_when: false
+      failed_when: false
 
-    - name: Create Snapper root config
+    - name: Create Snapper root config when missing
       command: snapper -c root create-config /
-      when: not snapper_root_config.stat.exists
+      register: snapper_root_config_create
+      changed_when: snapper_root_config_create.rc == 0
+      failed_when: false
+      when: snapper_root_config_check.rc != 0
       notify: Regenerate grub config
+
+    - name: Re-check Snapper root config after create attempt
+      command: snapper -c root get-config
+      register: snapper_root_config_final
+      changed_when: false
+      failed_when: false
+
+    - name: Warn when Snapper root config is still unavailable
+      debug:
+        msg: "Snapper root config is unavailable after create attempt. This can happen when /.snapshots already exists from a previous setup. Skipping Snapper policy configuration."
+      when: snapper_root_config_final.rc != 0
 
     - name: Configure Snapper retention policy
       lineinfile:
@@ -362,18 +377,21 @@
         - { key: "TIMELINE_LIMIT_WEEKLY", value: "4" }
         - { key: "TIMELINE_LIMIT_MONTHLY", value: "3" }
         - { key: "TIMELINE_LIMIT_YEARLY", value: "0" }
+      when: snapper_root_config_final.rc == 0
 
     - name: Enable Snapper timeline timer
       systemd:
         name: snapper-timeline.timer
         enabled: true
         state: started
+      when: snapper_root_config_final.rc == 0
 
     - name: Enable Snapper cleanup timer
       systemd:
         name: snapper-cleanup.timer
         enabled: true
         state: started
+      when: snapper_root_config_final.rc == 0
 
     - name: Check if grub-btrfs systemd path unit exists
       stat:
