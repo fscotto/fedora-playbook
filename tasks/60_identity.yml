@@ -132,7 +132,8 @@
         root_luks_device: "{{ root_mapper_status.stdout | regex_search('device:\\s*(\\S+)', '\\1') | default('', true) }}"
       when:
         - root_mapper_status is defined
-        - root_mapper_status.rc == 0
+        - not (root_mapper_status.skipped | default(false))
+        - (root_mapper_status.rc | default(1)) == 0
         - (root_mapper_status.stdout | regex_search('device:\\s*(\\S+)', '\\1') | default('', true)) | length > 0
 
     - name: Resolve backing block device for root mapper
