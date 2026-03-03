@@ -6,7 +6,7 @@
 # Uso: chmod +x run-ansible.sh && ./run-ansible.sh
 # =============================================================================
 
-set -euo pipefail
+set -Eeuo pipefail
 
 # Colori per output
 RED='\033[0;31m'
@@ -15,10 +15,37 @@ YELLOW='\033[1;33m'
 BLUE='\033[0;34m'
 NC='\033[0m'
 
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+LOG_DIR="${SCRIPT_DIR}/logs"
+RUN_TS="$(date +%Y%m%d-%H%M%S)"
+LOG_FILE="${LOG_DIR}/ansible-run-${RUN_TS}.log"
+
+mkdir -p "${LOG_DIR}"
+exec > >(tee -a "${LOG_FILE}") 2>&1
+
 log()     { echo -e "${GREEN}[✔]${NC} $1"; }
 warn()    { echo -e "${YELLOW}[!]${NC} $1"; }
 error()   { echo -e "${RED}[✘]${NC} $1"; exit 1; }
 section() { echo -e "\n${BLUE}══════════════════════════════════════${NC}"; echo -e "${BLUE}  $1${NC}"; echo -e "${BLUE}══════════════════════════════════════${NC}"; }
+
+on_error() {
+    local exit_code=$?
+    local line_no=${1:-unknown}
+    echo ""
+    echo -e "${RED}[✘]${NC} Esecuzione interrotta (linea ${line_no}, exit code ${exit_code})."
+    echo -e "${YELLOW}[!]${NC} Controlla le righe precedenti per il task che ha fallito (spesso in fase Btrfs/Snapper)."
+    echo -e "${YELLOW}[!]${NC} Per debug dettagliato: ansible-playbook -i localhost, -c local playbook.yml --ask-become-pass -vv"
+    if [ -t 0 ]; then
+        echo ""
+        warn "Premi INVIO per chiudere..."
+        read -r || true
+    fi
+    exit "$exit_code"
+}
+
+trap 'on_error $LINENO' ERR
+
+log "Log esecuzione: ${LOG_FILE}"
 
 # Verifica che non venga eseguito come root
 if [ "$EUID" -eq 0 ]; then

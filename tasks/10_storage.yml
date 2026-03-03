@@ -87,6 +87,7 @@
     - name: Empty /var/cache data from root subvolume
       command: find /var/cache -mindepth 1 -xdev -delete
       changed_when: true
+      failed_when: false
       when: "'subvol=@cache' not in var_cache_mount_opts.stdout"
 
     - name: Unmount @cache migration mountpoint
@@ -119,6 +120,7 @@
     - name: Empty /var/log data from root subvolume
       command: find /var/log -mindepth 1 -xdev -delete
       changed_when: true
+      failed_when: false
       when: "'subvol=@log' not in var_log_mount_opts.stdout"
 
     - name: Unmount @log migration mountpoint
@@ -157,6 +159,7 @@
     - name: Empty /var/lib/libvirt data from root subvolume
       command: find /var/lib/libvirt -mindepth 1 -xdev -delete
       changed_when: true
+      failed_when: false
       when: "'subvol=@libvirt' not in libvirt_mount_opts.stdout"
 
     - name: Unmount @libvirt migration mountpoint
@@ -270,6 +273,7 @@
     - name: Empty /.snapshots data from root subvolume
       command: find /.snapshots -mindepth 1 -xdev -delete
       changed_when: true
+      failed_when: false
       when: "'subvol=@snapshots' not in root_snapshots_mount_opts.stdout"
 
     - name: Unmount @snapshots migration mountpoint
