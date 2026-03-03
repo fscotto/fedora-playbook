@@ -262,6 +262,23 @@
         name: snapper
         state: present
 
+    - name: Check DNF Snapper plugin availability
+      command: dnf -q list --available python3-dnf-plugin-snapper
+      register: dnf_snapper_plugin_available
+      changed_when: false
+      failed_when: false
+
+    - name: Install DNF Snapper plugin when available
+      dnf:
+        name: python3-dnf-plugin-snapper
+        state: present
+      when: dnf_snapper_plugin_available.rc == 0
+
+    - name: Warn when DNF Snapper plugin is unavailable
+      debug:
+        msg: "python3-dnf-plugin-snapper is not available in current repositories. DNF pre/post snapshots will be skipped."
+      when: dnf_snapper_plugin_available.rc != 0
+
     - name: Check grub-btrfs package availability
       command: dnf -q list --available grub-btrfs
       register: grub_btrfs_available
@@ -404,6 +421,27 @@
         - { key: "TIMELINE_LIMIT_MONTHLY", value: "3" }
         - { key: "TIMELINE_LIMIT_YEARLY", value: "0" }
       when: snapper_root_config_final.rc == 0
+
+    - name: Ensure DNF Snapper plugin configuration is present
+      file:
+        path: /etc/dnf/plugins
+        state: directory
+        mode: "0755"
+      when:
+        - snapper_root_config_final.rc == 0
+        - dnf_snapper_plugin_available.rc == 0
+
+    - name: Write DNF Snapper plugin configuration
+      copy:
+        dest: /etc/dnf/plugins/snapper.conf
+        mode: "0644"
+        content: |
+          [main]
+          enabled = 1
+          snapper_config = root
+      when:
+        - snapper_root_config_final.rc == 0
+        - dnf_snapper_plugin_available.rc == 0
 
     - name: Enable Snapper timeline timer
       systemd:
