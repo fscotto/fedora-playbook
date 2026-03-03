@@ -54,7 +54,7 @@
       - clang-tools-extra
       - dbus-devel
       - entr
-      - ffmpeg
+      - ffmpeg-free
       - ffmpegthumbnailer
       - flameshot
       - fzf
@@ -73,10 +73,9 @@
       - neovim
       - ninja-build
       - nodejs
-      - npm
       - openssh-clients
       - pinentry
-      - pinentry-gtk
+      - pinentry-gnome3
       - pipx
       - pkgconf
       - playerctl
@@ -110,7 +109,7 @@
       - yt-dlp
 
     optional_cli_packages:
-      - delta
+      - git-delta
       - fastfetch
       - fd-find
       - papirus-icon-theme
