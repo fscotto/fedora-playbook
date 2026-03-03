@@ -31,6 +31,25 @@
     name: "{{ cli_packages }}"
     state: present
 
+- name: Check OpenCode package availability
+  become: true
+  command: dnf -q list --available opencode
+  register: opencode_package_available
+  changed_when: false
+  failed_when: false
+
+- name: Install OpenCode via DNF when available
+  become: true
+  dnf:
+    name: opencode
+    state: present
+  when: opencode_package_available.rc == 0
+
+- name: Warn when OpenCode package is unavailable
+  debug:
+    msg: "OpenCode package is not available in current repositories. Skipping DNF installation for opencode."
+  when: opencode_package_available.rc != 0
+
 - name: Install optional CLI tools and utilities
   become: true
   dnf:

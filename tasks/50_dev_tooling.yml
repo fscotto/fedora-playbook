@@ -52,6 +52,27 @@
     remote_src: true
   when: not toolbox_bin.stat.exists and toolbox_binary.matched > 0
 
+- name: Ensure local applications directory exists
+  file:
+    path: "{{ user_home }}/.local/share/applications"
+    state: directory
+    mode: "0755"
+
+- name: Create JetBrains Toolbox desktop entry
+  copy:
+    dest: "{{ user_home }}/.local/share/applications/jetbrains-toolbox.desktop"
+    mode: "0644"
+    content: |
+      [Desktop Entry]
+      Type=Application
+      Name=JetBrains Toolbox
+      Comment=Manage JetBrains IDEs and tools
+      Exec={{ user_home }}/.local/bin/jetbrains-toolbox
+      Icon=jetbrains-toolbox
+      Terminal=false
+      Categories=Development;IDE;
+      StartupNotify=true
+
 - name: Add local bin directory to PATH in .bashrc
   lineinfile:
     path: "{{ user_home }}/.bashrc"
