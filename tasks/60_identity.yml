@@ -11,7 +11,7 @@
       - pcsc-lite
       - pcsc-lite-ccid
       - yubikey-manager
-      - yubikey-personalization
+      - ykpers
     state: present
 
 - name: Enable and start pcscd socket
