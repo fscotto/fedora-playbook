@@ -198,6 +198,17 @@
         state: mounted
 
   always:
+    - name: Remove temporary Btrfs mountpoint entries from /etc/fstab
+      mount:
+        path: "{{ item }}"
+        state: absent_from_fstab
+      failed_when: false
+      loop:
+        - /mnt/btrfs-top-level
+        - /mnt/btrfs-migrate-cache
+        - /mnt/btrfs-migrate-log
+        - /mnt/btrfs-migrate-libvirt
+
     - name: Ensure @cache migration mountpoint is unmounted
       mount:
         path: /mnt/btrfs-migrate-cache
@@ -407,6 +418,12 @@
       notify: Regenerate grub config
 
   always:
+    - name: Remove Snapper migration mountpoint entry from /etc/fstab
+      mount:
+        path: /mnt/btrfs-migrate-snapshots
+        state: absent_from_fstab
+      failed_when: false
+
     - name: Ensure @snapshots migration mountpoint is unmounted
       mount:
         path: /mnt/btrfs-migrate-snapshots
