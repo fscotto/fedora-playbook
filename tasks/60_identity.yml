@@ -54,18 +54,78 @@
         root_mapper_name: "{{ root_mount_source.stdout | regex_replace('^/dev/mapper/', '') }}"
       when: root_mount_source.stdout is match('^/dev/mapper/.+')
 
+    - name: Read root mapping entry from /etc/crypttab
+      command: "awk '$1 !~ /^#/ && $1==\"{{ root_mapper_name }}\" {print; exit}' /etc/crypttab"
+      register: root_crypttab_line
+      changed_when: false
+      failed_when: false
+      when: root_mapper_name is defined
+
+    - name: Parse root /etc/crypttab fields
+      set_fact:
+        root_crypttab_fields: "{{ root_crypttab_line.stdout.split() }}"
+      when:
+        - root_crypttab_line is defined
+        - root_crypttab_line.stdout | length > 0
+
+    - name: Resolve LUKS device from /etc/crypttab source
+      command: "blkid -U {{ root_crypttab_fields[1] | regex_replace('^UUID=', '') }}"
+      register: root_luks_from_uuid
+      changed_when: false
+      failed_when: false
+      when:
+        - root_crypttab_fields is defined
+        - root_crypttab_fields | length >= 2
+        - root_crypttab_fields[1] is match('^UUID=')
+
+    - name: Set LUKS device path from /etc/crypttab UUID
+      set_fact:
+        root_luks_device: "{{ root_luks_from_uuid.stdout }}"
+      when:
+        - root_luks_from_uuid is defined
+        - root_luks_from_uuid.stdout | length > 0
+
+    - name: Set LUKS device path from /etc/crypttab direct path
+      set_fact:
+        root_luks_device: "{{ root_crypttab_fields[1] }}"
+      when:
+        - root_luks_device is not defined
+        - root_crypttab_fields is defined
+        - root_crypttab_fields | length >= 2
+        - root_crypttab_fields[1] is match('^/dev/.+')
+
+    - name: Inspect root mapper status via cryptsetup
+      command: "cryptsetup status {{ root_mapper_name }}"
+      register: root_mapper_status
+      changed_when: false
+      failed_when: false
+      when:
+        - root_mapper_name is defined
+        - root_luks_device is not defined
+
+    - name: Set LUKS backing device path from cryptsetup status
+      set_fact:
+        root_luks_device: "{{ root_mapper_status.stdout | regex_search('device:\\s*(\\S+)', '\\1') | default('', true) }}"
+      when:
+        - root_mapper_status is defined
+        - root_mapper_status.rc == 0
+        - (root_mapper_status.stdout | regex_search('device:\\s*(\\S+)', '\\1') | default('', true)) | length > 0
+
     - name: Resolve backing block device for root mapper
       command: "lsblk -ndo PKNAME {{ root_mount_source.stdout }}"
       register: root_backing_pkname
       changed_when: false
       failed_when: false
-      when: root_mapper_name is defined
+      when:
+        - root_mapper_name is defined
+        - root_luks_device is not defined
 
     - name: Set LUKS backing device path
       set_fact:
         root_luks_device: "/dev/{{ root_backing_pkname.stdout }}"
       when:
         - root_mapper_name is defined
+        - root_luks_device is not defined
         - root_backing_pkname.stdout | length > 0
 
     - name: Warn when LUKS backing device cannot be resolved
@@ -106,20 +166,6 @@
         - root_luks_device is defined
         - root_luks_tokens.stdout is not search('(?i)fido2')
       notify: Regenerate initramfs
-
-    - name: Read root mapping entry from /etc/crypttab
-      command: "awk '$1 !~ /^#/ && $1==\"{{ root_mapper_name }}\" {print; exit}' /etc/crypttab"
-      register: root_crypttab_line
-      changed_when: false
-      failed_when: false
-      when: root_mapper_name is defined
-
-    - name: Parse root /etc/crypttab fields
-      set_fact:
-        root_crypttab_fields: "{{ root_crypttab_line.stdout.split() }}"
-      when:
-        - root_crypttab_line is defined
-        - root_crypttab_line.stdout | length > 0
 
     - name: Build updated /etc/crypttab options for FIDO2
       set_fact:
