@@ -52,8 +52,19 @@ fi
 section "Installazione collezioni Ansible"
 
 if [ -f "requirements.yml" ]; then
-    ansible-galaxy collection install -r requirements.yml
-    log "Collezioni Ansible installate"
+    if awk '
+        /^[[:space:]]*#/ { next }
+        /^[[:space:]]*$/ { next }
+        /^[[:space:]]*---[[:space:]]*$/ { next }
+        /^[[:space:]]*collections:[[:space:]]*$/ { next }
+        { found=1; exit }
+        END { exit !found }
+    ' requirements.yml; then
+        ansible-galaxy collection install -r requirements.yml
+        log "Collezioni Ansible installate"
+    else
+        warn "requirements.yml presente ma senza collezioni: salto installazione"
+    fi
 else
     warn "File requirements.yml non trovato, continuo senza collezioni aggiuntive"
 fi
